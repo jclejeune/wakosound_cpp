@@ -11,11 +11,10 @@
 #include <QComboBox>
 #include <QKeyEvent>
 #include <QMetaObject>
-#include <iostream>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <iostream>
 
-// Mapping numpad → pad index (disposition MPC 7 8 9 / 4 5 6 / 1 2 3)
 static const int NUMPAD_KEYS[] = {
     Qt::Key_7, Qt::Key_8, Qt::Key_9,
     Qt::Key_4, Qt::Key_5, Qt::Key_6,
@@ -26,22 +25,19 @@ namespace wako::ui {
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("WakoSound");
-    resize(640, 540);
+    resize(760, 560);
 
     kitManager_ = std::make_shared<model::KitManager>();
     pattern_    = std::make_shared<seq::Pattern>();
     engine_     = std::make_unique<seq::Engine>();
 
-    // Charger kits
-    if (!kitManager_->loadFromFile("kits.json")) {
-        std::cerr << "[MainWindow] kits.json introuvable — kit vide\n";
-    }
+    if (!kitManager_->loadFromFile("kits.json"))
+        std::cerr << "[MainWindow] kits.json introuvable\n";
 
-    // Précharger les sons du kit par défaut
     audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
 
     // ── Build UI ──────────────────────────────────────────────────
-    auto* central = new QWidget(this);
+    auto* central    = new QWidget(this);
     setCentralWidget(central);
     auto* mainLayout = new QVBoxLayout(central);
     mainLayout->setSpacing(4);
@@ -52,13 +48,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* topLayout = new QHBoxLayout(topBar);
     topLayout->setContentsMargins(4, 2, 4, 2);
 
-    auto* kitLabel = new QLabel("Kit:");
-    auto* kitCombo = new QComboBox;
+    auto* kitLabel   = new QLabel("Kit:");
+    auto* kitCombo   = new QComboBox;
+    auto* statusLabel = new QLabel;
+
     for (const auto& k : kitManager_->kits())
         kitCombo->addItem(QString::fromStdString(k.name));
     kitCombo->setCurrentIndex(kitManager_->currentIndex());
 
-    auto* statusLabel = new QLabel;
     topLayout->addWidget(kitLabel);
     topLayout->addWidget(kitCombo);
     topLayout->addWidget(statusLabel);
@@ -66,19 +63,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     auto refreshStatus = [this, statusLabel] {
         const auto* kit = kitManager_->currentKit();
-        if (kit) statusLabel->setText(
-            QString("  %1 | %2/9 pads")
-                .arg(QString::fromStdString(kit->name))
-                .arg(kit->padCount()));
+        if (kit)
+            statusLabel->setText(
+                QString("  %1 | %2/9 pads")
+                    .arg(QString::fromStdString(kit->name))
+                    .arg(kit->padCount()));
     };
 
-    // ── Tabs ──────────────────────────────────────────────────────
+    // ── Widgets ───────────────────────────────────────────────────
     padGrid_      = new PadGrid(this);
     stepGrid_     = new StepGrid(pattern_, this);
     transportBar_ = new TransportBar(this);
 
-    auto* samplerTab   = new QWidget;
-    auto* samplerLay   = new QVBoxLayout(samplerTab);
+    auto* samplerTab = new QWidget;
+    auto* samplerLay = new QVBoxLayout(samplerTab);
     samplerLay->addWidget(padGrid_, 1);
 
     auto* seqTab = new QWidget;
@@ -97,15 +95,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     padGrid_->refresh(kitManager_->currentKit());
     refreshStatus();
 
+    // Kit selector
     connect(kitCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this, kitCombo, refreshStatus](int idx) {
                 kitManager_->switchTo(idx);
-                audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
+                audio::AudioCache::instance().preload(
+                    kitManager_->currentKitFilePaths());
                 padGrid_->refresh(kitManager_->currentKit());
                 stepGrid_->setKit(kitManager_->currentKit());
                 refreshStatus();
             });
 
+    // Pads souris
     connect(padGrid_, &PadGrid::padTriggered, this, [this](int idx) {
         const auto* kit = kitManager_->currentKit();
         if (!kit) return;
@@ -114,46 +115,59 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             audio::Player::instance().play(pad->filePath, pad->volume);
     });
 
-    connect(transportBar_, &TransportBar::playStopClicked,  this, &MainWindow::onPlayStop);
-    connect(transportBar_, &TransportBar::clearClicked,     this, &MainWindow::onClear);
-    connect(transportBar_, &TransportBar::bpmChanged,       this, &MainWindow::onBpmChanged);
-    connect(transportBar_, &TransportBar::lengthChanged,    this, &MainWindow::onLengthChanged);
-    connect(transportBar_, &TransportBar::modeChanged,      this, &MainWindow::onModeChanged);
+    // Transport
+    connect(transportBar_, &TransportBar::playStopClicked,
+            this, &MainWindow::onPlayStop);
+    connect(transportBar_, &TransportBar::clearClicked,
+            this, &MainWindow::onClear);
+    connect(transportBar_, &TransportBar::bpmChanged,
+            this, &MainWindow::onBpmChanged);
+    connect(transportBar_, &TransportBar::lengthChanged,
+            this, &MainWindow::onLengthChanged);
+    connect(transportBar_, &TransportBar::modeChanged,
+            this, &MainWindow::onModeChanged);
 
+    // Save / Load pattern
+    connect(transportBar_, &TransportBar::saveClicked, this, [this] {
+        QString path = QFileDialog::getSaveFileName(
+            this, "Sauvegarder le pattern", "pattern.json",
+            "Pattern JSON (*.json)");
+        if (path.isEmpty()) return;
+        if (!pattern_->saveToFile(path.toStdString()))
+            QMessageBox::warning(this, "Erreur", "Impossible de sauvegarder.");
+    });
+
+    connect(transportBar_, &TransportBar::loadClicked, this, [this] {
+        QString path = QFileDialog::getOpenFileName(
+            this, "Charger un pattern", "",
+            "Pattern JSON (*.json)");
+        if (path.isEmpty()) return;
+        auto loaded = seq::Pattern::loadFromFile(path.toStdString());
+        if (!loaded) {
+            QMessageBox::warning(this, "Erreur", "Fichier invalide.");
+            return;
+        }
+        *pattern_ = *loaded;
+        stepGrid_->updatePattern(pattern_.get());
+    });
+
+    // Toggle step
     connect(stepGrid_, &StepGrid::stepToggled, this, [this](int pad, int step) {
         pattern_->toggle(pad, step);
         stepGrid_->updatePattern(pattern_.get());
     });
 
+    // Longueur par track (pattern_ déjà modifié dans StepGrid)
+    connect(stepGrid_, &StepGrid::trackLengthChanged,
+            this, [](int /*pad*/, int /*len*/) {
+                // pattern_ mis à jour directement dans StepGrid::mousePressEvent
+            });
+
     // Stopper le séquenceur au retour sur l'onglet Sampler
     connect(tabs, &QTabWidget::currentChanged, this, [this](int idx) {
-        if (idx == 0 && engine_->isRunning()) stopSequencer();
+        if (idx == 0 && engine_->isRunning())
+            stopSequencer();
     });
-
-
-    connect(transportBar_, &TransportBar::saveClicked, this, [this] {
-    QString path = QFileDialog::getSaveFileName(
-        this, "Sauvegarder le pattern", "pattern.json",
-        "Pattern JSON (*.json)");
-    if (path.isEmpty()) return;
-    if (!pattern_->saveToFile(path.toStdString()))
-        QMessageBox::warning(this, "Erreur", "Impossible de sauvegarder.");
-});
-
-connect(transportBar_, &TransportBar::loadClicked, this, [this] {
-    QString path = QFileDialog::getOpenFileName(
-        this, "Charger un pattern", "",
-        "Pattern JSON (*.json)");
-    if (path.isEmpty()) return;
-    auto loaded = seq::Pattern::loadFromFile(path.toStdString());
-    if (!loaded) {
-        QMessageBox::warning(this, "Erreur", "Fichier invalide.");
-        return;
-    }
-    *pattern_ = *loaded;
-    stepGrid_->updatePattern(pattern_.get());
-});
-
 }
 
 MainWindow::~MainWindow() {
@@ -166,17 +180,21 @@ void MainWindow::onPlayStop() {
     if (engine_->isRunning()) {
         stopSequencer();
     } else {
-        pattern_->currentStep = 0;
-        engine_->start(pattern_, kitManager_,
-                       [this](int step) { onSequencerStep(step); },
-                       playMode_);
+        pattern_->trackSteps.fill(0);
+        engine_->setPlayMode(playMode_);
+        engine_->start(
+            pattern_,
+            kitManager_,
+            [this](const seq::TrackSteps& steps) {
+                onSequencerStep(steps);
+            });
         transportBar_->setPlaying(true);
     }
 }
 
 void MainWindow::stopSequencer() {
     engine_->stop();
-    pattern_->currentStep = 0;
+    pattern_->trackSteps.fill(0);
     transportBar_->setPlaying(false);
     stepGrid_->setCurrentStep(-1);
 }
@@ -187,16 +205,23 @@ void MainWindow::onClear() {
 }
 
 void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
-void MainWindow::onLengthChanged(int len) { pattern_->setLength(len); }
+
+void MainWindow::onLengthChanged(int len) {
+    // Met toutes les tracks à la même longueur
+    pattern_->setLength(len);
+    stepGrid_->updatePattern(pattern_.get());
+}
+
 void MainWindow::onModeChanged(bool gate) {
     playMode_ = gate ? seq::PlayMode::Gate : seq::PlayMode::OneShot;
+    engine_->setPlayMode(playMode_);  // realtime — effet au tick suivant
 }
 
 // ── Callback séquenceur (thread RT) → Qt via invokeMethod ─────────
-void MainWindow::onSequencerStep(int step) {
-    QMetaObject::invokeMethod(this, [this, step] {
-        stepGrid_->setCurrentStep(step);
-        transportBar_->setStep(step);
+void MainWindow::onSequencerStep(const seq::TrackSteps& steps) {
+    QMetaObject::invokeMethod(this, [this, steps] {
+        stepGrid_->setCurrentSteps(steps);
+        transportBar_->setStep(steps[0]);  // LCD = track 0 par convention
     }, Qt::QueuedConnection);
 }
 

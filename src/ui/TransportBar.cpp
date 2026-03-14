@@ -55,7 +55,7 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
 
     // Steps
     auto* stepSpin = new QSpinBox;
-    stepSpin->setRange(1, 16);
+    stepSpin->setRange(1, 32);
     stepSpin->setValue(16);
     stepSpin->setFixedWidth(48);
     connect(stepSpin, &QSpinBox::valueChanged, this, &TransportBar::lengthChanged);

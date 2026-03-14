@@ -9,30 +9,37 @@ namespace wako::ui {
 class StepGrid : public QWidget {
     Q_OBJECT
 public:
-    explicit StepGrid(std::shared_ptr<seq::Pattern> pattern, QWidget* parent = nullptr);
+    explicit StepGrid(std::shared_ptr<seq::Pattern> pattern,
+                      QWidget* parent = nullptr);
 
-    void setCurrentStep(int step);          // appelé depuis le thread séquenceur via Qt::QueuedConnection
+    void setCurrentSteps(const seq::TrackSteps& steps);
+    void setCurrentStep(int step);
     void updatePattern(const seq::Pattern* pat);
     void setKit(const model::Kit* kit);
 
 signals:
     void stepToggled(int pad, int step);
+    void trackLengthChanged(int pad, int length);
 
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
+    void mouseDoubleClickEvent(QMouseEvent*) override;
     QSize sizeHint() const override { return {800, 300}; }
 
 private:
     static constexpr int LABEL_W  = 72;
     static constexpr int HEADER_H = 22;
 
-    float cellW() const { return float(width()  - LABEL_W)  / seq::MAX_STEPS; }
-    float cellH() const { return float(height() - HEADER_H) / seq::MAX_PADS;  }
+    // Positions entières — calculées depuis la largeur totale, pas d'accumulation
+    int stepX0(int s) const;   // bord gauche du step s
+    int stepX1(int s) const;   // bord droit du step s
+    int padY0(int p)  const;   // bord haut du pad p
+    int padY1(int p)  const;   // bord bas du pad p
 
     std::shared_ptr<seq::Pattern> pattern_;
-    int                           currentStep_ = -1;
-    std::vector<std::string>      padNames_;    // cache des noms affichés
+    seq::TrackSteps               currentSteps_;
+    std::vector<std::string>      padNames_;
 };
 
 } // namespace wako::ui

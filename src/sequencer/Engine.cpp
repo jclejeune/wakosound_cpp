@@ -7,14 +7,13 @@ using namespace std::chrono;
 
 namespace wako::seq {
 
-void Engine::start(std::shared_ptr<Pattern>          pattern,
+void Engine::start(std::shared_ptr<Pattern>           pattern,
                    std::shared_ptr<model::KitManager> kit,
-                   StepCallback                       onStep,
-                   PlayMode                           mode) {
+                   StepCallback                       onStep) {
     stop();
     running_.store(true);
-    thread_ = std::thread([this, pattern, kit, onStep, mode] {
-        loop(pattern, kit, onStep, mode);
+    thread_ = std::thread([this, pattern, kit, onStep] {
+        loop(pattern, kit, onStep);
     });
 }
 
@@ -27,66 +26,74 @@ void Engine::stop() {
 
 // ──────────────────────────────────────────────────────────────────
 // Boucle principale — horloge absolue drift-free
+// BPM et PlayMode lus à chaque tick → changement en realtime
 // ──────────────────────────────────────────────────────────────────
-void Engine::loop(std::shared_ptr<Pattern>          patternPtr,
+void Engine::loop(std::shared_ptr<Pattern>           patternPtr,
                   std::shared_ptr<model::KitManager> kitPtr,
-                  StepCallback                       onStep,
-                  PlayMode                           mode)
+                  StepCallback                       onStep)
 {
     auto    startTime = steady_clock::now();
-    int64_t stepCount = 0;
-    int     lastBpm   = -1;          // ← tracker le BPM précédent
+    int64_t tickCount = 0;
+    int     lastBpm   = -1;
 
     while (running_.load()) {
         Pattern& pat        = *patternPtr;
         int      currentBpm = pat.bpm;
 
-        // BPM changé à chaud → rebase startTime depuis maintenant
-        // "fais comme si on avait toujours tourné à ce BPM"
+        // Rebase horloge si BPM changé à chaud
         if (currentBpm != lastBpm) {
-            auto intervalMs = milliseconds(Pattern::stepIntervalMs(currentBpm));
-            startTime = steady_clock::now() - stepCount * intervalMs;
+            auto interval = milliseconds(Pattern::stepIntervalMs(currentBpm));
+            startTime = steady_clock::now() - tickCount * interval;
             lastBpm   = currentBpm;
         }
 
-        auto intervalMs = milliseconds(Pattern::stepIntervalMs(currentBpm));
-        auto target     = startTime + stepCount * intervalMs;
-        auto sleepFor   = target - steady_clock::now();
+        auto interval = milliseconds(Pattern::stepIntervalMs(currentBpm));
+        auto target   = startTime + tickCount * interval;
+        auto sleepFor = target - steady_clock::now();
 
         if (sleepFor > milliseconds(0))
             std::this_thread::sleep_for(sleepFor);
 
         if (!running_.load()) break;
 
-        int step = pat.advance();
-        playStep(pat, *kitPtr, step, mode);
-        onStep(step);
-        ++stepCount;
+        // Lire le mode à chaque tick — même pattern que le BPM
+        PlayMode currentMode = static_cast<PlayMode>(
+            playMode_.load(std::memory_order_relaxed));
+
+        // Snapshot steps courants AVANT d'avancer
+        TrackSteps currentSteps = pat.trackSteps;
+
+        auto activePads = pat.advance();
+        playPads(activePads, *kitPtr, currentMode);
+        onStep(currentSteps);
+
+        ++tickCount;
     }
 }
 
 // ──────────────────────────────────────────────────────────────────
-// playStep — joue les pads actifs, gère le mode gate
+// playPads
 // ──────────────────────────────────────────────────────────────────
-void Engine::playStep(const Pattern& pat, const model::KitManager& kit,
-                      int step, PlayMode mode) {
+void Engine::playPads(const std::vector<int>&  activePads,
+                      const model::KitManager& kit,
+                      PlayMode                 mode)
+{
     auto& player = audio::Player::instance();
     const auto* currentKit = kit.currentKit();
     if (!currentKit) return;
 
-    // Mode gate : stopper les voix du step précédent
     if (mode == PlayMode::Gate) {
         for (auto& [padIdx, voiceId] : activeVoices_)
             player.stop(voiceId);
         activeVoices_.clear();
     }
 
-    for (int padIdx : pat.activeAtStep(step)) {
+    for (int padIdx : activePads) {
         const model::Pad* pad = currentKit->pad(padIdx);
         if (!pad || !pad->enabled || pad->filePath.empty()) continue;
 
         bool gateMode = (mode == PlayMode::Gate);
-        int voiceId   = player.play(pad->filePath, pad->volume, gateMode);
+        int  voiceId  = player.play(pad->filePath, pad->volume, gateMode);
 
         if (gateMode && voiceId >= 0)
             activeVoices_[padIdx] = voiceId;

@@ -4,7 +4,6 @@
 #include <functional>
 #include <thread>
 #include <atomic>
-#include <mutex>
 #include <unordered_map>
 #include <memory>
 
@@ -12,42 +11,38 @@ namespace wako::seq {
 
 enum class PlayMode { OneShot, Gate };
 
-// ──────────────────────────────────────────────────────────────────
-// Engine — boucle de séquençage sur un thread dédié
-//
-// Horloge absolue (drift-free) : même technique que le code Clojure
-// mais sans core.async. On calcule le timestamp cible de chaque step
-// et on dort exactement le bon nombre de ms.
-// ──────────────────────────────────────────────────────────────────
 class Engine {
 public:
-    using StepCallback = std::function<void(int step)>;
+    using StepCallback = std::function<void(const TrackSteps&)>;
 
     Engine() = default;
     ~Engine() { stop(); }
 
-    // Démarre le séquençage. onStep est appelé dans le thread RT du séquenceur.
-    void start(std::shared_ptr<Pattern>          pattern,
+    void start(std::shared_ptr<Pattern>           pattern,
                std::shared_ptr<model::KitManager> kit,
-               StepCallback                       onStep,
-               PlayMode                           mode = PlayMode::OneShot);
+               StepCallback                       onStep);
 
     void stop();
     bool isRunning() const { return running_.load(); }
 
-private:
-    void loop(std::shared_ptr<Pattern>          pattern,
-              std::shared_ptr<model::KitManager> kit,
-              StepCallback                       onStep,
-              PlayMode                           mode);
+    // Changement en realtime — effet au tick suivant
+    void setPlayMode(PlayMode mode) {
+        playMode_.store(static_cast<int>(mode), std::memory_order_relaxed);
+    }
 
-    void playStep(const Pattern& pat, const model::KitManager& kit,
-                  int step, PlayMode mode);
+private:
+    void loop(std::shared_ptr<Pattern>           pattern,
+              std::shared_ptr<model::KitManager> kit,
+              StepCallback                       onStep);
+
+    void playPads(const std::vector<int>&  activePads,
+                  const model::KitManager& kit,
+                  PlayMode                 mode);
 
     std::thread        thread_;
-    std::atomic<bool>  running_{false};
-    // voiceIds actives (pour gate : arrêt au step suivant)
-    std::unordered_map<int, int> activeVoices_;  // padIdx → voiceId
+    std::atomic<bool>  running_  {false};
+    std::atomic<int>   playMode_ {0};      // 0=OneShot, 1=Gate
+    std::unordered_map<int, int> activeVoices_;
 };
 
 } // namespace wako::seq

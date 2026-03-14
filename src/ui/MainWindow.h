@@ -28,8 +28,7 @@ private slots:
     void onModeChanged(bool gate);
 
 private:
-    void onSequencerStep(int step);   // appelé depuis le thread séquenceur
-    void refreshKitLabel();
+    void onSequencerStep(const seq::TrackSteps& steps);
     void stopSequencer();
 
     std::shared_ptr<model::KitManager> kitManager_;
@@ -37,7 +36,6 @@ private:
     std::unique_ptr<seq::Engine>       engine_;
     seq::PlayMode                      playMode_ = seq::PlayMode::OneShot;
 
-    // UI components (owned by Qt hierarchy)
     PadGrid*      padGrid_      = nullptr;
     StepGrid*     stepGrid_     = nullptr;
     TransportBar* transportBar_ = nullptr;
