@@ -1,0 +1,53 @@
+{
+  "defaultKit": "default",
+  "kits": [
+    {
+      "id": "default",
+      "name": "Default",
+      "description": "Kit de sons par défaut",
+      "pads": [
+        { "name": "Kick",    "file": "sounds/kick.wav" },
+        { "name": "Snare",   "file": "sounds/snare.wav" },
+        { "name": "Pluck",   "file": "sounds/pluck.wav" },
+        { "name": "Slap",    "file": "sounds/slap.wav" },
+        { "name": "HiHat",   "file": "sounds/hihat.wav" },
+        { "name": "Clap",    "file": "sounds/clap.wav" },
+        { "name": "Healing", "file": "sounds/healing.wav" },
+        { "name": "Netflix", "file": "sounds/netflix.wav" },
+        { "name": "Lazer",   "file": "sounds/lazer.wav" }
+      ]
+    },
+    {
+      "id": "metal",
+      "name": "Metal",
+      "description": "Kit metal brutal",
+      "pads": [
+        { "name": "MetalKick",  "file": "sounds/metal/metalkick.wav" },
+        { "name": "GrindSnare", "file": "sounds/metal/grindcoresnare.wav" },
+        { "name": "Ride",       "file": "sounds/metal/ride.wav" },
+        { "name": "China",      "file": "sounds/metal/china.wav" },
+        { "name": "Note 1",     "file": "sounds/metal/note1.wav" },
+        { "name": "Note 2",     "file": "sounds/metal/note2.wav" },
+        { "name": "Note 3",     "file": "sounds/metal/note3.wav" },
+        { "name": "Note 4",     "file": "sounds/metal/note4.wav" },
+        { "name": "Note 5",     "file": "sounds/metal/note5.wav" }
+      ]
+    },
+    {
+      "id": "test",
+      "name": "Test",
+      "description": "Kit de test",
+      "pads": [
+        { "name": "A", "file": "sounds/test/a.wav" },
+        { "name": "B", "file": "sounds/test/b.wav" },
+        { "name": "C", "file": "sounds/test/c.wav" },
+        { "name": "D", "file": "sounds/test/d.wav" },
+        { "name": "E", "file": "sounds/test/e.wav" },
+        { "name": "F", "file": "sounds/test/f.wav" },
+        { "name": "G", "file": "sounds/test/g.wav" },
+        { "name": "H", "file": "sounds/test/h.wav" },
+        { "name": "I", "file": "sounds/test/i.wav" }
+      ]
+    }
+  ]
+}
