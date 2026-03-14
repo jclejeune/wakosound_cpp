@@ -12,6 +12,8 @@
 #include <QKeyEvent>
 #include <QMetaObject>
 #include <iostream>
+#include <QFileDialog>
+#include <QMessageBox>
 
 // Mapping numpad → pad index (disposition MPC 7 8 9 / 4 5 6 / 1 2 3)
 static const int NUMPAD_KEYS[] = {
@@ -127,6 +129,31 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(tabs, &QTabWidget::currentChanged, this, [this](int idx) {
         if (idx == 0 && engine_->isRunning()) stopSequencer();
     });
+
+
+    connect(transportBar_, &TransportBar::saveClicked, this, [this] {
+    QString path = QFileDialog::getSaveFileName(
+        this, "Sauvegarder le pattern", "pattern.json",
+        "Pattern JSON (*.json)");
+    if (path.isEmpty()) return;
+    if (!pattern_->saveToFile(path.toStdString()))
+        QMessageBox::warning(this, "Erreur", "Impossible de sauvegarder.");
+});
+
+connect(transportBar_, &TransportBar::loadClicked, this, [this] {
+    QString path = QFileDialog::getOpenFileName(
+        this, "Charger un pattern", "",
+        "Pattern JSON (*.json)");
+    if (path.isEmpty()) return;
+    auto loaded = seq::Pattern::loadFromFile(path.toStdString());
+    if (!loaded) {
+        QMessageBox::warning(this, "Erreur", "Fichier invalide.");
+        return;
+    }
+    *pattern_ = *loaded;
+    stepGrid_->updatePattern(pattern_.get());
+});
+
 }
 
 MainWindow::~MainWindow() {

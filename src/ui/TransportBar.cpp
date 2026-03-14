@@ -71,13 +71,28 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
         emit modeChanged(id == 1);
     });
 
+    auto* saveBtn = new QPushButton("💾");
+    saveBtn->setFixedSize(30, 28);
+    connect(saveBtn, &QPushButton::clicked, this, &TransportBar::saveClicked);
+
+    auto* loadBtn = new QPushButton("📂");
+    loadBtn->setFixedSize(30, 28);
+    connect(loadBtn, &QPushButton::clicked, this, &TransportBar::loadClicked);
+
+
     // Step LCD
     stepLcd_ = new QLabel(" 1");
     stepLcd_->setObjectName("lcd");
     stepLcd_->setAlignment(Qt::AlignCenter);
 
+
+    lay->addWidget(saveBtn);
+    lay->addWidget(loadBtn);
     lay->addWidget(playBtn_);
-    lay->addWidget(clearBtn);
+    lay->addWidget(clearBtn);    
+    lay->addWidget(sep());
+    lay->addWidget(new QLabel("Step"));
+    lay->addWidget(stepLcd_);
     lay->addWidget(sep());
     lay->addWidget(new QLabel("BPM"));
     lay->addWidget(bpmSpin);
@@ -88,9 +103,7 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     lay->addWidget(new QLabel("Mode"));
     lay->addWidget(oneShotBtn);
     lay->addWidget(gateBtn);
-    lay->addWidget(sep());
-    lay->addWidget(new QLabel("Step"));
-    lay->addWidget(stepLcd_);
+
     lay->addStretch();
 }
 

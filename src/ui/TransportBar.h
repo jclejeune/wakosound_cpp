@@ -21,6 +21,8 @@ signals:
     void bpmChanged(int bpm);
     void lengthChanged(int length);
     void modeChanged(bool gate);   // true = gate
+    void saveClicked();
+    void loadClicked();
 
 private:
     QPushButton* playBtn_   = nullptr;

@@ -2,6 +2,8 @@
 #include <array>
 #include <vector>
 #include <cstdint>
+#include <optional>
+#include <string>
 
 namespace wako::seq {
 
@@ -35,6 +37,10 @@ struct Pattern {
 
     // Calcul timing
     static int stepIntervalMs(int bpm) { return (60 * 1000) / (bpm * 4); }
+
+    //save pattern
+    bool saveToFile(const std::string& path) const;
+    static std::optional<Pattern> loadFromFile(const std::string& path);
 };
 
 } // namespace wako::seq
