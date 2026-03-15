@@ -183,7 +183,16 @@ void MainWindow::stopSequencer() {
 }
 
 void MainWindow::onClear() {
+    // Stop si en cours
+    if (engine_->isRunning()) {
+        engine_->stop();
+        transportBar_->setPlaying(false);
+    }
+    // Reset complet — notes + longueurs à 16
     pattern_->clearAll();
+    pattern_->setLength(16);
+    pattern_->trackSteps.fill(0);
+    stepGrid_->setCurrentStep(-1);
     stepGrid_->updatePattern(pattern_.get());
 }
 
