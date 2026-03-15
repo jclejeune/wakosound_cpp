@@ -25,7 +25,6 @@ public:
     void stop();
     bool isRunning() const { return running_.load(); }
 
-    // Changement en realtime — effet au tick suivant
     void setPlayMode(PlayMode mode) {
         playMode_.store(static_cast<int>(mode), std::memory_order_relaxed);
     }
@@ -36,12 +35,14 @@ private:
               StepCallback                       onStep);
 
     void playPads(const std::vector<int>&  activePads,
+                  const TrackSteps&         currentSteps,
                   const model::KitManager& kit,
-                  PlayMode                 mode);
+                  PlayMode                 mode,
+                  const Pattern&           pat);
 
     std::thread        thread_;
     std::atomic<bool>  running_  {false};
-    std::atomic<int>   playMode_ {0};      // 0=OneShot, 1=Gate
+    std::atomic<int>   playMode_ {0};
     std::unordered_map<int, int> activeVoices_;
 };
 

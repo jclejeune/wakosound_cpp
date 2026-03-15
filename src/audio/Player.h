@@ -2,29 +2,23 @@
 #include "VoicePool.h"
 #include <portaudio.h>
 #include <string>
-#include <functional>
 
 namespace wako::audio {
 
-// ──────────────────────────────────────────────────────────────────
-// Player — wraps PortAudio + VoicePool
-//
-// Singleton. Ouvrir le stream une seule fois au démarrage.
-// Toutes les lectures passent par le même callback.
-// ──────────────────────────────────────────────────────────────────
 class Player {
 public:
     static Player& instance();
     ~Player();
 
-    // Initialise PortAudio et ouvre le stream. Retourne false si erreur.
     bool init(int sampleRate = 44100, int framesPerBuffer = 256);
     void shutdown();
 
-    // Joue un fichier audio. Retourne un voice-id (pour stop en mode gate).
-    int  play(const std::string& filePath, float volume = 1.0f, bool gate = false);
+    // pitch : semitones -12 → +12 (0 = pas de traitement)
+    int  play(const std::string& filePath,
+              float volume = 1.0f,
+              int   pitch  = 0,
+              bool  gate   = false);
 
-    // Stoppe une voix (mode gate).
     void stop(int voiceId);
     void stopAll();
 

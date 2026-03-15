@@ -16,10 +16,14 @@ pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
 # ── libsndfile ───────────────────────────────────────────
 pkg_check_modules(SNDFILE REQUIRED sndfile)
 
+# ── RubberBand ───────────────────────────────────────────
+pkg_check_modules(RUBBERBAND REQUIRED rubberband)
+
 # ── Sources ──────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
     src/audio/AudioCache.cpp
+    src/audio/PitchCache.cpp
     src/audio/VoicePool.cpp
     src/audio/Player.cpp
     src/model/KitManager.cpp
@@ -37,21 +41,24 @@ target_include_directories(WakoSound PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${PORTAUDIO_INCLUDE_DIRS}
     ${SNDFILE_INCLUDE_DIRS}
+    ${RUBBERBAND_INCLUDE_DIRS}
 )
 
 target_link_libraries(WakoSound PRIVATE
     Qt6::Widgets
     ${PORTAUDIO_LIBRARIES}
     ${SNDFILE_LIBRARIES}
+    ${RUBBERBAND_LIBRARIES}
 )
 
 target_compile_options(WakoSound PRIVATE
     -Wall -Wextra -O2
     ${PORTAUDIO_CFLAGS_OTHER}
     ${SNDFILE_CFLAGS_OTHER}
+    ${RUBBERBAND_CFLAGS_OTHER}
 )
 
-# ── Resources (kits.json) ────────────────────────────────
+# ── Resources ────────────────────────────────────────────
 configure_file(
     ${CMAKE_SOURCE_DIR}/resources/kits/kits.json
     ${CMAKE_BINARY_DIR}/kits.json
@@ -59,7 +66,6 @@ configure_file(
 )
 
 install(TARGETS WakoSound RUNTIME DESTINATION bin)
-
 
 add_custom_command(TARGET WakoSound POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory

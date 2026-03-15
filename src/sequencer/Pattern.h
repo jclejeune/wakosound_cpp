@@ -9,61 +9,89 @@
 namespace wako::seq {
 
 static constexpr int MAX_PADS  = 9;
-static constexpr int MAX_STEPS = 32;   // monte à 32
+static constexpr int MAX_STEPS = 32;
 
 // ──────────────────────────────────────────────────────────────────
-// Pattern — grille 2D [pad][step]
-//
-// Chaque track a sa propre longueur (1-32) et son propre step courant.
-// patternLength reste disponible comme "set all tracks" raccourci.
+// StepData — paramètres d'un step individuel
+// ──────────────────────────────────────────────────────────────────
+struct StepData {
+    bool  active = false;
+    float volume = 1.0f;   // 0.0 → 1.0
+    int   pitch  = 0;      // semitones -12 → +12
+
+    bool hasCustomParams() const {
+        return volume != 1.0f || pitch != 0;
+    }
+};
+
+// ──────────────────────────────────────────────────────────────────
+// Pattern — grille 2D [pad][step] de StepData
 // ──────────────────────────────────────────────────────────────────
 struct Pattern {
-    std::array<std::array<bool, MAX_STEPS>, MAX_PADS> grid{};
+    std::array<std::array<StepData, MAX_STEPS>, MAX_PADS> grid{};
 
-    // Longueur par track (indépendantes)
-    std::array<int, MAX_PADS> trackLengths{};   // initialisé dans constructeur
-    std::array<int, MAX_PADS> trackSteps{};     // step courant par track
+    std::array<int, MAX_PADS> trackLengths{};
+    std::array<int, MAX_PADS> trackSteps{};
 
     int bpm           = 120;
-    int patternLength = 16;   // valeur "set all" — sync avec trackLengths
+    int patternLength = 16;
 
     Pattern() {
         trackLengths.fill(16);
         trackSteps.fill(0);
     }
 
-    // ── Accès ──────────────────────────────────────────────────────
+    // ── Accès ─────────────────────────────────────────────────────
     bool get(int pad, int step) const {
         if (pad < 0 || pad >= MAX_PADS || step < 0 || step >= MAX_STEPS)
             return false;
+        return grid[pad][step].active;
+    }
+
+    const StepData& getStepData(int pad, int step) const {
         return grid[pad][step];
     }
 
-    // Pads actifs sur le step courant de chaque track
+    StepData& getStepData(int pad, int step) {
+        return grid[pad][step];
+    }
+
     std::vector<int> activeNow() const;
 
     // ── Mutations ─────────────────────────────────────────────────
     Pattern& set(int pad, int step, bool v) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
-            grid[pad][step] = v;
+            grid[pad][step].active = v;
         return *this;
     }
 
     Pattern& toggle(int pad, int step) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
-            grid[pad][step] = !grid[pad][step];
+            grid[pad][step].active = !grid[pad][step].active;
+        return *this;
+    }
+
+    Pattern& setStepVolume(int pad, int step, float v) {
+        if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
+            grid[pad][step].volume = std::clamp(v, 0.0f, 1.0f);
+        return *this;
+    }
+
+    Pattern& setStepPitch(int pad, int step, int p) {
+        if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
+            grid[pad][step].pitch = std::clamp(p, -12, 12);
         return *this;
     }
 
     Pattern& clearAll() {
-        for (auto& row : grid) row.fill(false);
+        for (auto& row : grid) row.fill(StepData{});
         trackSteps.fill(0);
         return *this;
     }
 
     Pattern& clearPad(int pad) {
         if (pad >= 0 && pad < MAX_PADS) {
-            grid[pad].fill(false);
+            grid[pad].fill(StepData{});
             trackSteps[pad] = 0;
         }
         return *this;
@@ -74,22 +102,20 @@ struct Pattern {
         return *this;
     }
 
-    // Set all tracks à la même longueur
     Pattern& setLength(int l) {
         patternLength = std::max(1, std::min(MAX_STEPS, l));
         trackLengths.fill(patternLength);
         return *this;
     }
 
-    // Set longueur d'une track individuelle
     Pattern& setTrackLength(int pad, int l) {
         if (pad >= 0 && pad < MAX_PADS)
             trackLengths[pad] = std::max(1, std::min(MAX_STEPS, l));
         return *this;
     }
 
-    // ── Avance toutes les tracks d'un tick ────────────────────────
-    // Retourne les pads qui jouent ce tick
+    // ── Avance toutes les tracks ───────────────────────────────────
+    // Retourne les pads actifs ce tick
     std::vector<int> advance();
 
     // ── Timing ───────────────────────────────────────────────────
@@ -102,7 +128,6 @@ struct Pattern {
     static std::optional<Pattern> loadFromFile(const std::string& path);
 };
 
-// Steps courants par track — partagé entre Engine, StepGrid, MainWindow
 using TrackSteps = std::array<int, MAX_PADS>;
 
 } // namespace wako::seq

@@ -20,26 +20,52 @@ public:
 signals:
     void stepToggled(int pad, int step);
     void trackLengthChanged(int pad, int length);
+    void stepDataChanged(int pad, int step, seq::StepData data);
 
 protected:
     void paintEvent(QPaintEvent*) override;
     void mousePressEvent(QMouseEvent*) override;
+    void mouseMoveEvent(QMouseEvent*) override;
+    void mouseReleaseEvent(QMouseEvent*) override;
     void mouseDoubleClickEvent(QMouseEvent*) override;
     QSize sizeHint() const override { return {800, 300}; }
 
 private:
     static constexpr int LABEL_W  = 72;
     static constexpr int HEADER_H = 22;
+    static constexpr int DRAG_THRESHOLD = 5;     // pixels avant de locker l'axe
+    static constexpr int PITCH_PX = 18;          // pixels par semitone
+    static constexpr float VOL_PX = 200.0f;      // pixels pour 0→100%
 
-    // Positions entières — calculées depuis la largeur totale, pas d'accumulation
-    int stepX0(int s) const;   // bord gauche du step s
-    int stepX1(int s) const;   // bord droit du step s
-    int padY0(int p)  const;   // bord haut du pad p
-    int padY1(int p)  const;   // bord bas du pad p
+    int stepX0(int s) const;
+    int stepX1(int s) const;
+    int padY0(int p)  const;
+    int padY1(int p)  const;
+
+    // Couleur d'une case selon pitch et volume
+    QColor stepColor(int pitch, float volume, bool active) const;
+    // Couleur du texte en contraste sur stepColor
+    QColor textColor(const QColor& bg) const;
+
+    // ── Drag state ───────────────────────────────────────────────
+    enum class Axis { None, Horizontal, Vertical };
+
+    struct DragState {
+        bool  active    = false;
+        int   pad       = -1;
+        int   step      = -1;
+        int   startX    = 0;
+        int   startY    = 0;
+        float origVol   = 1.0f;
+        int   origPitch = 0;
+        bool  hasMoved  = false;
+        Axis  axis      = Axis::None;
+    };
 
     std::shared_ptr<seq::Pattern> pattern_;
     seq::TrackSteps               currentSteps_;
     std::vector<std::string>      padNames_;
+    DragState                     drag_;
 };
 
 } // namespace wako::ui

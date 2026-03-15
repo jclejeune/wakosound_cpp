@@ -1,5 +1,6 @@
 #include "Player.h"
 #include "AudioCache.h"
+#include "PitchCache.h"
 #include <iostream>
 
 namespace wako::audio {
@@ -59,23 +60,19 @@ void Player::shutdown() {
     }
 }
 
-// ── API publique ──────────────────────────────────────────────────
+int Player::play(const std::string& filePath, float volume, int pitch, bool gate) {
+    // pitch == 0 → AudioCache direct
+    // pitch != 0 → PitchCache (RubberBand offline, mis en cache)
+    const AudioBuffer* buf = (pitch == 0)
+        ? AudioCache::instance().get(filePath)
+        : PitchCache::instance().get(filePath, pitch);
 
-int Player::play(const std::string& filePath, float volume, bool gate) {
-    const AudioBuffer* buf = AudioCache::instance().get(filePath);
     if (!buf) return -1;
     return voicePool_.play(buf, volume, gate);
 }
 
-void Player::stop(int voiceId) {
-    voicePool_.stop(voiceId);
-}
-
-void Player::stopAll() {
-    voicePool_.stopAll();
-}
-
-// ── Callback PortAudio (RT thread) ───────────────────────────────
+void Player::stop(int voiceId)  { voicePool_.stop(voiceId); }
+void Player::stopAll()          { voicePool_.stopAll(); }
 
 int Player::paCallback(const void*, void* output, unsigned long frames,
                        const PaStreamCallbackTimeInfo*,
