@@ -113,8 +113,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(transportBar_, &TransportBar::clearClicked,    this, &MainWindow::onClear);
     connect(transportBar_, &TransportBar::bpmChanged,      this, &MainWindow::onBpmChanged);
     connect(transportBar_, &TransportBar::lengthChanged,   this, &MainWindow::onLengthChanged);
-    connect(transportBar_, &TransportBar::modeChanged,     this, &MainWindow::onModeChanged);
-
     connect(transportBar_, &TransportBar::saveClicked, this, [this] {
         QString path = QFileDialog::getSaveFileName(
             this, "Sauvegarder le pattern", "pattern.json",
@@ -155,7 +153,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 stepGrid_->update();
             });
 
-    // Mute / Solo — effet immédiat (pattern_ partagé avec Engine)
+    // Gate / Mute / Solo — effet immédiat (pattern_ partagé avec Engine)
+    connect(stepGrid_, &StepGrid::trackGateToggled,
+            this, [this](int pad) {
+                pattern_->toggleTrackGate(pad);
+                stepGrid_->update();
+            });
+
     connect(stepGrid_, &StepGrid::trackMuteToggled,
             this, [this](int pad) {
                 pattern_->toggleMute(pad);
@@ -186,7 +190,6 @@ void MainWindow::onPlayStop() {
         stopSequencer();
     } else {
         pattern_->trackSteps.fill(0);
-        engine_->setPlayMode(playMode_);
         engine_->start(
             pattern_, kitManager_,
             [this](const seq::TrackSteps& steps) { onSequencerStep(steps); });
@@ -218,11 +221,6 @@ void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
 void MainWindow::onLengthChanged(int len) {
     pattern_->setLength(len);
     stepGrid_->updatePattern(pattern_.get());
-}
-
-void MainWindow::onModeChanged(bool gate) {
-    playMode_ = gate ? seq::PlayMode::Gate : seq::PlayMode::OneShot;
-    engine_->setPlayMode(playMode_);
 }
 
 void MainWindow::onSequencerStep(const seq::TrackSteps& steps) {

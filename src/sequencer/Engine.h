@@ -9,7 +9,7 @@
 
 namespace wako::seq {
 
-enum class PlayMode { OneShot, Gate };
+// PlayMode retiré — gate géré par track dans Pattern::trackGate
 
 class Engine {
 public:
@@ -25,10 +25,6 @@ public:
     void stop();
     bool isRunning() const { return running_.load(); }
 
-    void setPlayMode(PlayMode mode) {
-        playMode_.store(static_cast<int>(mode), std::memory_order_relaxed);
-    }
-
 private:
     void loop(std::shared_ptr<Pattern>           pattern,
               std::shared_ptr<model::KitManager> kit,
@@ -37,12 +33,10 @@ private:
     void playPads(const std::vector<int>&  activePads,
                   const TrackSteps&         currentSteps,
                   const model::KitManager& kit,
-                  PlayMode                 mode,
                   const Pattern&           pat);
 
     std::thread        thread_;
     std::atomic<bool>  running_  {false};
-    std::atomic<int>   playMode_ {0};
     std::unordered_map<int, int> activeVoices_;
 };
 

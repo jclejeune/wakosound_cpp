@@ -33,8 +33,9 @@ struct Pattern {
 
     std::array<int,  MAX_PADS> trackLengths{};
     std::array<int,  MAX_PADS> trackSteps{};
-    std::array<bool, MAX_PADS> muted{};    // mute par track
-    std::array<bool, MAX_PADS> soloed{};   // solo par track
+    std::array<bool, MAX_PADS> muted{};      // mute par track
+    std::array<bool, MAX_PADS> soloed{};     // solo par track
+    std::array<bool, MAX_PADS> trackGate{};  // false=OneShot, true=Gate
 
     int bpm           = 120;
     int patternLength = 16;
@@ -44,6 +45,8 @@ struct Pattern {
         trackSteps.fill(0);
         muted.fill(false);
         soloed.fill(false);
+        trackGate.fill(false);
+        trackGate.fill(false);
     }
 
     // ── Accès ─────────────────────────────────────────────────────
@@ -106,6 +109,12 @@ struct Pattern {
         return *this;
     }
 
+    Pattern& toggleTrackGate(int pad) {
+        if (pad >= 0 && pad < MAX_PADS)
+            trackGate[pad] = !trackGate[pad];
+        return *this;
+    }
+
     Pattern& toggleMute(int pad) {
         if (pad >= 0 && pad < MAX_PADS)
             muted[pad] = !muted[pad];
@@ -124,6 +133,8 @@ struct Pattern {
         trackSteps.fill(0);
         muted.fill(false);
         soloed.fill(false);
+        trackGate.fill(false);
+        trackGate.fill(false);
         return *this;
     }
 

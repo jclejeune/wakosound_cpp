@@ -30,7 +30,6 @@ static constexpr int CHUNK_MS          = 50;
 static void sleepInterruptible(milliseconds sleepFor,
                                 const std::atomic<bool>& running) {
     if (sleepFor <= milliseconds(0)) return;
-
     if (sleepFor.count() < FREQ_THRESHOLD_MS) {
         std::this_thread::sleep_for(sleepFor);
     } else {
@@ -72,12 +71,9 @@ void Engine::loop(std::shared_ptr<Pattern>           patternPtr,
 
         if (!running_.load()) break;
 
-        PlayMode currentMode = static_cast<PlayMode>(
-            playMode_.load(std::memory_order_relaxed));
-
         TrackSteps currentSteps = pat.trackSteps;
         auto activePads = pat.advance();
-        playPads(activePads, currentSteps, *kitPtr, currentMode, pat);
+        playPads(activePads, currentSteps, *kitPtr, pat);
         onStep(currentSteps);
 
         ++tickCount;
@@ -87,35 +83,35 @@ void Engine::loop(std::shared_ptr<Pattern>           patternPtr,
 void Engine::playPads(const std::vector<int>&  activePads,
                       const TrackSteps&         currentSteps,
                       const model::KitManager& kit,
-                      PlayMode                 mode,
                       const Pattern&           pat)
 {
     auto& player = audio::Player::instance();
     const auto* currentKit = kit.currentKit();
     if (!currentKit) return;
 
-    // Gate : stopper les voix du tick précédent
-    if (mode == PlayMode::Gate) {
-        for (auto& [padIdx, voiceId] : activeVoices_)
+    // Stopper les voix gate du tick précédent pour les tracks en gate
+    for (auto& [padIdx, voiceId] : activeVoices_) {
+        if (pat.trackGate[padIdx])
             player.stop(voiceId);
-        activeVoices_.clear();
     }
+    // Nettoyer les voix des tracks en gate
+    for (int i = 0; i < seq::MAX_PADS; ++i)
+        if (pat.trackGate[i])
+            activeVoices_.erase(i);
 
     for (int padIdx : activePads) {
-        // ── Mute / Solo ───────────────────────────────────────────
+        // Mute / Solo
         if (!pat.shouldPlay(padIdx)) continue;
 
         const model::Pad* pad = currentKit->pad(padIdx);
         if (!pad || !pad->enabled || pad->filePath.empty()) continue;
 
-        const StepData& sd       = pat.getStepData(padIdx, currentSteps[padIdx]);
-        float           stepVol  = pad->volume * sd.volume;
+        const StepData& sd        = pat.getStepData(padIdx, currentSteps[padIdx]);
+        float           stepVol   = pad->volume * sd.volume;
         int             stepPitch = sd.pitch;
 
-        // ── Gate local ou global ──────────────────────────────────
-        // sd.gate=true → tronqué même si global=OneShot
-        // mode=Gate    → tronqué (mode global)
-        bool useGate = (mode == PlayMode::Gate) || sd.gate;
+        // Gate : track gate OU step gate local
+        bool useGate = pat.trackGate[padIdx] || sd.gate;
 
         int voiceId = player.play(pad->filePath, stepVol, stepPitch, useGate);
 

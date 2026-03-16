@@ -3,54 +3,34 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QSpinBox>
-#include <QRadioButton>
-#include <QButtonGroup>
 #include <QFrame>
 #include <QResizeEvent>
 #include <QToolButton>
+#include <QTimer>
 
 namespace wako::ui {
 
 static const QString BAR_STYLE = R"(
 QWidget       { background: #3C3F41; }
-
-QPushButton {
-    background: transparent;
-    color:      #DCDCDC;
-    border:     none;
-    padding:    3px 8px;
-    border-radius: 4px;
-    font-size:  10px;
+QToolButton {
+    background: transparent; color: #DCDCDC;
+    border: none; padding: 3px 8px;
+    border-radius: 4px; font-size: 10px;
 }
-QPushButton:hover  { background: #505050; }
-QPushButton:pressed{ background: #3a3a3a; }
-
+QToolButton:hover  { background: #505050; }
+QToolButton:pressed{ background: #3a3a3a; }
 QSpinBox {
-    background: #4D4D4D;
-    color:      #DCDCDC;
-    border:     1px solid #555;
-    border-radius: 3px;
-    padding:    2px 4px;
-    font-size:  12px;
+    background: #4D4D4D; color: #DCDCDC;
+    border: 1px solid #555; border-radius: 3px;
+    padding: 2px 4px; font-size: 12px;
 }
-
-QRadioButton          { color: #DCDCDC; font-size: 11px; spacing: 4px; }
-QRadioButton::indicator { width: 12px; height: 12px; }
-
-QLabel#sectionLabel   { color: #888888; font-size: 10px; }
-
+QLabel#sectionLabel { color: #888888; font-size: 10px; }
 QLabel#lcd {
-    background: #050A14;
-    color:      #50DCFF;
-    font:       bold 18px Monospace;
-    border:     1px solid #282840;
-    padding:    1px 8px;
-    border-radius: 3px;
-    min-width:  44px;
+    background: #050A14; color: #50DCFF;
+    font: bold 18px Monospace; border: 1px solid #282840;
+    padding: 1px 8px; border-radius: 3px; min-width: 44px;
 }
 )";
-
-// ── Helpers ───────────────────────────────────────────────────────
 
 static QFrame* makeSep() {
     auto* f = new QFrame;
@@ -60,9 +40,7 @@ static QFrame* makeSep() {
     return f;
 }
 
-// Bouton avec icône SVG (haut) + label texte (bas) — QToolButton natif
-static QToolButton* makeBtn(const char* svg, const QString& label,
-                             int iconSize = 18) {
+static QToolButton* makeBtn(const char* svg, const QString& label, int iconSize = 18) {
     auto* btn = new QToolButton;
     btn->setIcon(icons::icon(svg, iconSize));
     btn->setIconSize({iconSize, iconSize});
@@ -70,54 +48,21 @@ static QToolButton* makeBtn(const char* svg, const QString& label,
     btn->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     btn->setMinimumSize(44, 44);
     btn->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    btn->setStyleSheet(
-        "QToolButton { background:transparent; color:#DCDCDC; border:none;"
-        "  padding:2px 6px; border-radius:4px; font-size:10px; }"
-        "QToolButton:hover  { background:#505050; }"
-        "QToolButton:pressed{ background:#3a3a3a; }"
-    );
     return btn;
 }
 
-// Section : petit label gris dessus + widget dessous
 static QWidget* makeSection(const QString& lbl, QWidget* ctrl) {
     auto* w   = new QWidget;
     auto* lay = new QVBoxLayout(w);
     lay->setContentsMargins(0, 0, 0, 0);
     lay->setSpacing(2);
-
     auto* label = new QLabel(lbl);
     label->setObjectName("sectionLabel");
     label->setAlignment(Qt::AlignCenter);
-
-    lay->addWidget(label,  0, Qt::AlignHCenter);
-    lay->addWidget(ctrl,   0, Qt::AlignHCenter);
-    return w;
-}
-
-static QWidget* makeSectionH(const QString& lbl, QWidget* w1, QWidget* w2) {
-    auto* w   = new QWidget;
-    auto* lay = new QVBoxLayout(w);
-    lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(2);
-
-    auto* label = new QLabel(lbl);
-    label->setObjectName("sectionLabel");
-    label->setAlignment(Qt::AlignCenter);
-
-    auto* row    = new QWidget;
-    auto* rowLay = new QHBoxLayout(row);
-    rowLay->setContentsMargins(0, 0, 0, 0);
-    rowLay->setSpacing(6);
-    rowLay->addWidget(w1);
-    rowLay->addWidget(w2);
-
     lay->addWidget(label, 0, Qt::AlignHCenter);
-    lay->addWidget(row,   0, Qt::AlignHCenter);
+    lay->addWidget(ctrl,  0, Qt::AlignHCenter);
     return w;
 }
-
-// ── Constructeur ──────────────────────────────────────────────────
 
 TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     setStyleSheet(BAR_STYLE);
@@ -131,14 +76,14 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     // Fichiers
     auto* saveBtn = makeBtn(icons::SAVE,        "Save");
     auto* loadBtn = makeBtn(icons::FOLDER_OPEN, "Open");
-    connect(saveBtn, &QPushButton::clicked, this, &TransportBar::saveClicked);
-    connect(loadBtn, &QPushButton::clicked, this, &TransportBar::loadClicked);
+    connect(saveBtn, &QToolButton::clicked, this, &TransportBar::saveClicked);
+    connect(loadBtn, &QToolButton::clicked, this, &TransportBar::loadClicked);
 
     // Transport
-    playBtn_ = makeBtn(icons::PLAY,  "Play");
+    playBtn_   = makeBtn(icons::PLAY,  "Play");
     auto* clearBtn = makeBtn(icons::CLEAR, "Clear");
-    connect(playBtn_,  &QPushButton::clicked, this, &TransportBar::playStopClicked);
-    connect(clearBtn,  &QPushButton::clicked, this, &TransportBar::clearClicked);
+    connect(playBtn_,  &QToolButton::clicked, this, &TransportBar::playStopClicked);
+    connect(clearBtn,  &QToolButton::clicked, this, &TransportBar::clearClicked);
 
     // Step LCD
     stepLcd_ = new QLabel(" 1");
@@ -146,12 +91,18 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     stepLcd_->setAlignment(Qt::AlignCenter);
     stepSection_ = makeSection("Step", stepLcd_);
 
-    // BPM
+    // BPM — debounce 400ms
     auto* bpmSpin = new QSpinBox;
     bpmSpin->setRange(1, 9999);
     bpmSpin->setValue(120);
     bpmSpin->setFixedWidth(68);
-    connect(bpmSpin, &QSpinBox::valueChanged, this, &TransportBar::bpmChanged);
+    auto* bpmDebounce = new QTimer(this);
+    bpmDebounce->setSingleShot(true);
+    bpmDebounce->setInterval(400);
+    connect(bpmSpin, &QSpinBox::valueChanged, this,
+            [bpmDebounce](int) { bpmDebounce->start(); });
+    connect(bpmDebounce, &QTimer::timeout, this,
+            [bpmSpin, this] { emit bpmChanged(bpmSpin->value()); });
     bpmSection_ = makeSection("BPM", bpmSpin);
 
     // Steps
@@ -162,19 +113,7 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     connect(stepSpin, &QSpinBox::valueChanged, this, &TransportBar::lengthChanged);
     stepsSection_ = makeSection("Steps", stepSpin);
 
-    // Mode
-    auto* oneShotBtn = new QRadioButton("1-Shot");
-    auto* gateBtn    = new QRadioButton("Gate");
-    oneShotBtn->setChecked(true);
-    auto* grp = new QButtonGroup(this);
-    grp->addButton(oneShotBtn, 0);
-    grp->addButton(gateBtn,    1);
-    connect(grp, &QButtonGroup::idClicked, this, [this](int id) {
-        emit modeChanged(id == 1);
-    });
-    modeSection_ = makeSectionH("Mode", oneShotBtn, gateBtn);
-
-    // Layout
+    // Layout — plus de section Mode
     lay->addWidget(saveBtn);
     lay->addWidget(loadBtn);
     lay->addSpacing(2);
@@ -194,32 +133,19 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     lay->addWidget(makeSep());
     lay->addSpacing(4);
     lay->addWidget(stepsSection_);
-    lay->addSpacing(4);
-    lay->addWidget(makeSep());
-    lay->addSpacing(4);
-    lay->addWidget(modeSection_);
     lay->addStretch();
 }
 
-// ── Responsive ───────────────────────────────────────────────────
-
 void TransportBar::resizeEvent(QResizeEvent* ev) {
     QWidget::resizeEvent(ev);
-    bool compact = ev->size().width() < 650;
+    bool compact = ev->size().width() < 500;
     if (compact != compact_) {
         compact_ = compact;
-        updateCompact(compact);
+        stepSection_->setVisible(!compact);
+        bpmSection_->setVisible(!compact);
+        stepsSection_->setVisible(!compact);
     }
 }
-
-void TransportBar::updateCompact(bool compact) {
-    stepSection_->setVisible(!compact);
-    bpmSection_->setVisible(!compact);
-    stepsSection_->setVisible(!compact);
-    modeSection_->setVisible(!compact);
-}
-
-// ── Setters ───────────────────────────────────────────────────────
 
 void TransportBar::setPlaying(bool playing) {
     playBtn_->setIcon(icons::icon(playing ? icons::PAUSE : icons::PLAY));

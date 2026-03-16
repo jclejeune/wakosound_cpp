@@ -26,6 +26,7 @@ static const QColor BLACK     {  0,   0,   0};
 static const QColor LEN_COL   { 80, 130, 200};
 static const QColor RED_HL    {220,  40,  40};
 static const QColor BTN_NORMAL{ 65,  65,  65};
+static const QColor BTN_GATE  { 50,  80, 160};   // bleu = gate actif
 static const QColor BTN_MUTE  {180,  50,  50};   // rouge = muté
 static const QColor BTN_SOLO  {190, 150,   0};   // jaune = solo
 static const QColor BTN_FG    {220, 220, 220};
@@ -89,10 +90,11 @@ int StepGrid::padAtY(int y) const {
     int p = (y - HEADER_H) * seq::MAX_PADS / (height() - HEADER_H);
     return (p >= 0 && p < seq::MAX_PADS) ? p : -1;
 }
-// Retourne : >= 0 = step, -2 = zone M, -3 = zone S, -1 = ailleurs
+// Retourne : >= 0 = step, -2 = zone G, -3 = zone M, -4 = zone S, -1 = ailleurs
 int StepGrid::stepAtX(int x) const {
-    if (x >= LABEL_W && x < LABEL_W + BTN_W)           return -2; // M
-    if (x >= LABEL_W + BTN_W && x < TOTAL_LW)          return -3; // S
+    if (x >= LABEL_W && x < LABEL_W + BTN_W)               return -2; // G
+    if (x >= LABEL_W + BTN_W && x < LABEL_W + BTN_W*2)    return -3; // M
+    if (x >= LABEL_W + BTN_W*2 && x < TOTAL_LW)           return -4; // S
     if (x < TOTAL_LW) return -1;
     int s = (x - TOTAL_LW) * seq::MAX_STEPS / (width() - TOTAL_LW);
     return (s >= 0 && s < seq::MAX_STEPS) ? s : -1;
@@ -143,23 +145,30 @@ void StepGrid::paintEvent(QPaintEvent*) {
                    Qt::AlignVCenter | Qt::AlignLeft,
                    QString::fromStdString(padNames_[pad]));
 
-        // ── Bouton M ─────────────────────────────────────────────
-        int btnH = std::min(ch - 4, 16);
-        int btnY = y0 + (ch - btnH) / 2;
+        // ── Boutons G M S ─────────────────────────────────────────
+        int btnH  = std::min(ch - 4, 16);
+        int btnY  = y0 + (ch - btnH) / 2;
+        bool isGate = pattern_->trackGate[pad];
 
-        p.fillRect(LABEL_W, btnY, BTN_W - 1, btnH,
-                   isMuted ? BTN_MUTE : BTN_NORMAL);
-        p.setPen(BTN_FG);
         p.setFont(QFont("Dialog", 8, QFont::Bold));
-        p.drawText(QRect(LABEL_W, btnY, BTN_W - 1, btnH),
-                   Qt::AlignCenter, "M");
 
-        // ── Bouton S ─────────────────────────────────────────────
-        p.fillRect(LABEL_W + BTN_W, btnY, BTN_W - 1, btnH,
-                   isSoloed ? BTN_SOLO : BTN_NORMAL);
+        // G
+        p.fillRect(LABEL_W,           btnY, BTN_W-1, btnH,
+                   isGate   ? BTN_GATE   : BTN_NORMAL);
         p.setPen(BTN_FG);
-        p.drawText(QRect(LABEL_W + BTN_W, btnY, BTN_W - 1, btnH),
-                   Qt::AlignCenter, "S");
+        p.drawText(QRect(LABEL_W, btnY, BTN_W-1, btnH), Qt::AlignCenter, "G");
+
+        // M
+        p.fillRect(LABEL_W + BTN_W,   btnY, BTN_W-1, btnH,
+                   isMuted  ? BTN_MUTE  : BTN_NORMAL);
+        p.setPen(BTN_FG);
+        p.drawText(QRect(LABEL_W+BTN_W, btnY, BTN_W-1, btnH), Qt::AlignCenter, "M");
+
+        // S
+        p.fillRect(LABEL_W + BTN_W*2, btnY, BTN_W-1, btnH,
+                   isSoloed ? BTN_SOLO  : BTN_NORMAL);
+        p.setPen(BTN_FG);
+        p.drawText(QRect(LABEL_W+BTN_W*2, btnY, BTN_W-1, btnH), Qt::AlignCenter, "S");
 
         // ── Cellules ─────────────────────────────────────────────
         for (int s = 0; s < seq::MAX_STEPS; ++s) {
@@ -234,8 +243,9 @@ void StepGrid::mousePressEvent(QMouseEvent* ev) {
     int zone = stepAtX(mx);
 
     if (ev->button() == Qt::LeftButton) {
-        if (zone == -2) { emit trackMuteToggled(pad);  return; }
-        if (zone == -3) { emit trackSoloToggled(pad);  return; }
+        if (zone == -2) { emit trackGateToggled(pad);  return; }
+        if (zone == -3) { emit trackMuteToggled(pad);  return; }
+        if (zone == -4) { emit trackSoloToggled(pad);  return; }
     }
 
     int s = zone;

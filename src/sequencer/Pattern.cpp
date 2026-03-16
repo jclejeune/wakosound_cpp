@@ -30,15 +30,18 @@ bool Pattern::saveToFile(const std::string& path) const {
         jLengths.push_back(trackLengths[p]);
     j["trackLengths"] = jLengths;
 
-    // mute/solo
-    auto jMuted  = nlohmann::json::array();
-    auto jSoloed = nlohmann::json::array();
+    // mute/solo/gate par track
+    auto jMuted     = nlohmann::json::array();
+    auto jSoloed    = nlohmann::json::array();
+    auto jTrackGate = nlohmann::json::array();
     for (int p = 0; p < MAX_PADS; ++p) {
         jMuted.push_back(muted[p]);
         jSoloed.push_back(soloed[p]);
+        jTrackGate.push_back(trackGate[p]);
     }
-    j["muted"]  = jMuted;
-    j["soloed"] = jSoloed;
+    j["muted"]     = jMuted;
+    j["soloed"]    = jSoloed;
+    j["trackGate"] = jTrackGate;
 
     auto jgrid = nlohmann::json::array();
     for (int p = 0; p < MAX_PADS; ++p) {
@@ -92,6 +95,10 @@ std::optional<Pattern> Pattern::loadFromFile(const std::string& path) {
     if (j.contains("soloed") && j["soloed"].is_array())
         for (int p = 0; p < MAX_PADS && p < (int)j["soloed"].size(); ++p)
             pat.soloed[p] = j["soloed"][p].get<bool>();
+
+    if (j.contains("trackGate") && j["trackGate"].is_array())
+        for (int p = 0; p < MAX_PADS && p < (int)j["trackGate"].size(); ++p)
+            pat.trackGate[p] = j["trackGate"][p].get<bool>();
 
     if (j.contains("grid") && j["grid"].is_array()) {
         for (int p = 0; p < MAX_PADS && p < (int)j["grid"].size(); ++p) {

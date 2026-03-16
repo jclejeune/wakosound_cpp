@@ -21,6 +21,7 @@ signals:
     void stepToggled(int pad, int step);
     void stepGateToggled(int pad, int step);
     void trackLengthChanged(int pad, int length);
+    void trackGateToggled(int pad);
     void trackMuteToggled(int pad);
     void trackSoloToggled(int pad);
     void stepDataChanged(int pad, int step, seq::StepData data);
@@ -36,7 +37,7 @@ protected:
 private:
     static constexpr int LABEL_W  = 65;
     static constexpr int BTN_W    = 18;
-    static constexpr int TOTAL_LW = LABEL_W + BTN_W * 2;
+    static constexpr int TOTAL_LW = LABEL_W + BTN_W * 3;  // G + M + S
     static constexpr int HEADER_H = 22;
     static constexpr int DRAG_THRESHOLD = 5;
     static constexpr int PITCH_PX       = 18;
