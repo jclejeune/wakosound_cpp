@@ -24,10 +24,22 @@ QSpinBox {
     border: 1px solid #555; border-radius: 3px;
     padding: 2px 4px; font-size: 12px;
 }
+QComboBox {
+    background: #4D4D4D; color: #DCDCDC;
+    border: 1px solid #555; border-radius: 3px;
+    padding: 2px 8px; font-size: 12px;
+    min-width: 90px;
+}
+QComboBox::drop-down { border: none; width: 16px; }
+QComboBox QAbstractItemView {
+    background: #3C3F41; color: #DCDCDC;
+    selection-background-color: #505050;
+    border: 1px solid #555;
+}
 QLabel#sectionLabel { color: #888888; font-size: 10px; }
 QLabel#lcd {
     background: #050A14; color: #50DCFF;
-    font: bold 18px Monospace; border: 1px solid #282840;
+    border: 1px solid #282840;
     padding: 1px 8px; border-radius: 3px; min-width: 44px;
 }
 )";
@@ -73,25 +85,31 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     lay->setContentsMargins(10, 4, 10, 4);
     lay->setSpacing(4);
 
-    // Fichiers
+    // ── Fichiers ──────────────────────────────────────────────────
     auto* saveBtn = makeBtn(icons::SAVE,        "Save");
     auto* loadBtn = makeBtn(icons::FOLDER_OPEN, "Open");
     connect(saveBtn, &QToolButton::clicked, this, &TransportBar::saveClicked);
     connect(loadBtn, &QToolButton::clicked, this, &TransportBar::loadClicked);
 
-    // Transport
+    // ── Kit selector ──────────────────────────────────────────────
+    kitCombo_ = new QComboBox;
+    connect(kitCombo_, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &TransportBar::kitChanged);
+
+    // ── Transport ─────────────────────────────────────────────────
     playBtn_   = makeBtn(icons::PLAY,  "Play");
     auto* clearBtn = makeBtn(icons::CLEAR, "Clear");
     connect(playBtn_,  &QToolButton::clicked, this, &TransportBar::playStopClicked);
     connect(clearBtn,  &QToolButton::clicked, this, &TransportBar::clearClicked);
 
-    // Step LCD
+    // ── Step LCD ──────────────────────────────────────────────────
     stepLcd_ = new QLabel(" 1");
     stepLcd_->setObjectName("lcd");
     stepLcd_->setAlignment(Qt::AlignCenter);
+    stepLcd_->setFont(icons::lcdFont(20));
     stepSection_ = makeSection("Step", stepLcd_);
 
-    // BPM — debounce 400ms
+    // ── BPM — debounce 400ms ──────────────────────────────────────
     auto* bpmSpin = new QSpinBox;
     bpmSpin->setRange(1, 9999);
     bpmSpin->setValue(120);
@@ -105,7 +123,7 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
             [bpmSpin, this] { emit bpmChanged(bpmSpin->value()); });
     bpmSection_ = makeSection("BPM", bpmSpin);
 
-    // Steps
+    // ── Steps ─────────────────────────────────────────────────────
     auto* stepSpin = new QSpinBox;
     stepSpin->setRange(1, 32);
     stepSpin->setValue(16);
@@ -113,9 +131,13 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     connect(stepSpin, &QSpinBox::valueChanged, this, &TransportBar::lengthChanged);
     stepsSection_ = makeSection("Steps", stepSpin);
 
-    // Layout — plus de section Mode
+    // ── Layout ────────────────────────────────────────────────────
     lay->addWidget(saveBtn);
     lay->addWidget(loadBtn);
+    lay->addSpacing(2);
+    lay->addWidget(makeSep());
+    lay->addSpacing(2);
+    lay->addWidget(kitCombo_);
     lay->addSpacing(2);
     lay->addWidget(makeSep());
     lay->addSpacing(2);
@@ -136,9 +158,18 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     lay->addStretch();
 }
 
+void TransportBar::setKits(const QStringList& names, int currentIndex) {
+    kitCombo_->blockSignals(true);
+    kitCombo_->clear();
+    for (const auto& n : names)
+        kitCombo_->addItem(n);
+    kitCombo_->setCurrentIndex(currentIndex);
+    kitCombo_->blockSignals(false);
+}
+
 void TransportBar::resizeEvent(QResizeEvent* ev) {
     QWidget::resizeEvent(ev);
-    bool compact = ev->size().width() < 500;
+    bool compact = ev->size().width() < 550;
     if (compact != compact_) {
         compact_ = compact;
         stepSection_->setVisible(!compact);

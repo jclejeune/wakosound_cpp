@@ -3,6 +3,7 @@
 #include "../sequencer/Pattern.h"
 #include "../sequencer/Engine.h"
 #include <QMainWindow>
+#include <QTabWidget>
 #include <memory>
 
 namespace wako::ui {
@@ -37,6 +38,7 @@ private:
     PadGrid*      padGrid_      = nullptr;
     StepGrid*     stepGrid_     = nullptr;
     TransportBar* transportBar_ = nullptr;
+    QTabWidget*   tabs_         = nullptr;
 };
 
 } // namespace wako::ui

@@ -22,6 +22,7 @@ pkg_check_modules(RUBBERBAND REQUIRED rubberband)
 # ── Sources ──────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
+    resources.qrc
     src/audio/AudioCache.cpp
     src/audio/PitchCache.cpp
     src/audio/VoicePool.cpp
