@@ -20,9 +20,6 @@ std::vector<int> Pattern::advance() {
     return active;
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Save — inclut volume et pitch par step
-// ──────────────────────────────────────────────────────────────────
 bool Pattern::saveToFile(const std::string& path) const {
     nlohmann::json j;
     j["bpm"]    = bpm;
@@ -33,20 +30,29 @@ bool Pattern::saveToFile(const std::string& path) const {
         jLengths.push_back(trackLengths[p]);
     j["trackLengths"] = jLengths;
 
+    // mute/solo
+    auto jMuted  = nlohmann::json::array();
+    auto jSoloed = nlohmann::json::array();
+    for (int p = 0; p < MAX_PADS; ++p) {
+        jMuted.push_back(muted[p]);
+        jSoloed.push_back(soloed[p]);
+    }
+    j["muted"]  = jMuted;
+    j["soloed"] = jSoloed;
+
     auto jgrid = nlohmann::json::array();
     for (int p = 0; p < MAX_PADS; ++p) {
         auto row = nlohmann::json::array();
         for (int s = 0; s < MAX_STEPS; ++s) {
             const auto& sd = grid[p][s];
             if (sd.active && sd.hasCustomParams()) {
-                // Format complet si params custom
                 row.push_back({
                     {"a", sd.active},
                     {"v", sd.volume},
-                    {"p", sd.pitch}
+                    {"p", sd.pitch},
+                    {"g", sd.gate}
                 });
             } else {
-                // Format compact si pas de params custom
                 row.push_back(sd.active);
             }
         }
@@ -60,9 +66,6 @@ bool Pattern::saveToFile(const std::string& path) const {
     return true;
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Load — backward compatible (bool ou {a,v,p})
-// ──────────────────────────────────────────────────────────────────
 std::optional<Pattern> Pattern::loadFromFile(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) return std::nullopt;
@@ -75,13 +78,20 @@ std::optional<Pattern> Pattern::loadFromFile(const std::string& path) {
     int globalLength = j.value("length", 16);
     pat.patternLength = globalLength;
 
-    if (j.contains("trackLengths") && j["trackLengths"].is_array()) {
+    if (j.contains("trackLengths") && j["trackLengths"].is_array())
         for (int p = 0; p < MAX_PADS && p < (int)j["trackLengths"].size(); ++p)
             pat.trackLengths[p] = std::max(1, std::min(MAX_STEPS,
                                   j["trackLengths"][p].get<int>()));
-    } else {
+    else
         pat.trackLengths.fill(globalLength);
-    }
+
+    if (j.contains("muted") && j["muted"].is_array())
+        for (int p = 0; p < MAX_PADS && p < (int)j["muted"].size(); ++p)
+            pat.muted[p] = j["muted"][p].get<bool>();
+
+    if (j.contains("soloed") && j["soloed"].is_array())
+        for (int p = 0; p < MAX_PADS && p < (int)j["soloed"].size(); ++p)
+            pat.soloed[p] = j["soloed"][p].get<bool>();
 
     if (j.contains("grid") && j["grid"].is_array()) {
         for (int p = 0; p < MAX_PADS && p < (int)j["grid"].size(); ++p) {
@@ -90,15 +100,12 @@ std::optional<Pattern> Pattern::loadFromFile(const std::string& path) {
                 const auto& cell = row[s];
                 StepData& sd = pat.grid[p][s];
                 if (cell.is_boolean()) {
-                    // Ancien format
                     sd.active = cell.get<bool>();
-                    sd.volume = 1.0f;
-                    sd.pitch  = 0;
                 } else if (cell.is_object()) {
-                    // Nouveau format
                     sd.active = cell.value("a", false);
                     sd.volume = std::clamp(cell.value("v", 1.0f), 0.0f, 1.0f);
                     sd.pitch  = std::clamp(cell.value("p", 0), -12, 12);
+                    sd.gate   = cell.value("g", false);
                 }
             }
         }

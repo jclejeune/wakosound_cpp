@@ -143,10 +143,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         stepGrid_->updatePattern(pattern_.get());
     });
 
-    // StepData modifié par drag — pattern_ déjà mis à jour dans StepGrid
-    // Rien à faire ici sauf rafraîchir l'affichage
+    // Toggle gate par step (double-clic droit)
+    connect(stepGrid_, &StepGrid::stepGateToggled,
+            this, [this](int /*pad*/, int /*step*/) {
+                stepGrid_->update();
+            });
+
+    // StepData modifié par drag
     connect(stepGrid_, &StepGrid::stepDataChanged,
             this, [this](int /*pad*/, int /*step*/, seq::StepData /*data*/) {
+                stepGrid_->update();
+            });
+
+    // Mute / Solo — effet immédiat (pattern_ partagé avec Engine)
+    connect(stepGrid_, &StepGrid::trackMuteToggled,
+            this, [this](int pad) {
+                pattern_->toggleMute(pad);
+                stepGrid_->update();
+            });
+
+    connect(stepGrid_, &StepGrid::trackSoloToggled,
+            this, [this](int pad) {
+                pattern_->toggleSolo(pad);
                 stepGrid_->update();
             });
 
@@ -184,7 +202,14 @@ void MainWindow::stopSequencer() {
 }
 
 void MainWindow::onClear() {
-    pattern_->clearAll();
+    if (engine_->isRunning()) {
+        engine_->stop();
+        transportBar_->setPlaying(false);
+    }
+    pattern_->clearAll();       // efface notes + gate + mute + solo
+    pattern_->setLength(16);    // reset toutes les longueurs à 16
+    pattern_->trackSteps.fill(0);
+    stepGrid_->setCurrentStep(-1);
     stepGrid_->updatePattern(pattern_.get());
 }
 

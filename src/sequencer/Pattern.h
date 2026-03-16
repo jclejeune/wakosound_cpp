@@ -18,9 +18,10 @@ struct StepData {
     bool  active = false;
     float volume = 1.0f;   // 0.0 → 1.0
     int   pitch  = 0;      // semitones -12 → +12
+    bool  gate   = false;  // true = tronqué (override local du mode global)
 
     bool hasCustomParams() const {
-        return volume != 1.0f || pitch != 0;
+        return volume != 1.0f || pitch != 0 || gate;
     }
 };
 
@@ -30,8 +31,10 @@ struct StepData {
 struct Pattern {
     std::array<std::array<StepData, MAX_STEPS>, MAX_PADS> grid{};
 
-    std::array<int, MAX_PADS> trackLengths{};
-    std::array<int, MAX_PADS> trackSteps{};
+    std::array<int,  MAX_PADS> trackLengths{};
+    std::array<int,  MAX_PADS> trackSteps{};
+    std::array<bool, MAX_PADS> muted{};    // mute par track
+    std::array<bool, MAX_PADS> soloed{};   // solo par track
 
     int bpm           = 120;
     int patternLength = 16;
@@ -39,6 +42,8 @@ struct Pattern {
     Pattern() {
         trackLengths.fill(16);
         trackSteps.fill(0);
+        muted.fill(false);
+        soloed.fill(false);
     }
 
     // ── Accès ─────────────────────────────────────────────────────
@@ -56,6 +61,18 @@ struct Pattern {
         return grid[pad][step];
     }
 
+    // Vrai si au moins une track est en solo
+    bool anySolo() const {
+        return std::any_of(soloed.begin(), soloed.end(),
+                           [](bool s){ return s; });
+    }
+
+    // Est-ce que ce pad doit jouer compte tenu de mute/solo ?
+    bool shouldPlay(int pad) const {
+        if (anySolo()) return soloed[pad];
+        return !muted[pad];
+    }
+
     std::vector<int> activeNow() const;
 
     // ── Mutations ─────────────────────────────────────────────────
@@ -71,6 +88,12 @@ struct Pattern {
         return *this;
     }
 
+    Pattern& toggleGate(int pad, int step) {
+        if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
+            grid[pad][step].gate = !grid[pad][step].gate;
+        return *this;
+    }
+
     Pattern& setStepVolume(int pad, int step, float v) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
             grid[pad][step].volume = std::clamp(v, 0.0f, 1.0f);
@@ -83,9 +106,24 @@ struct Pattern {
         return *this;
     }
 
+    Pattern& toggleMute(int pad) {
+        if (pad >= 0 && pad < MAX_PADS)
+            muted[pad] = !muted[pad];
+        return *this;
+    }
+
+    Pattern& toggleSolo(int pad) {
+        if (pad >= 0 && pad < MAX_PADS)
+            soloed[pad] = !soloed[pad];
+        return *this;
+    }
+
+    // Reset complet — notes + gate + mute/solo + longueurs
     Pattern& clearAll() {
         for (auto& row : grid) row.fill(StepData{});
         trackSteps.fill(0);
+        muted.fill(false);
+        soloed.fill(false);
         return *this;
     }
 
@@ -114,16 +152,12 @@ struct Pattern {
         return *this;
     }
 
-    // ── Avance toutes les tracks ───────────────────────────────────
-    // Retourne les pads actifs ce tick
     std::vector<int> advance();
 
-    // ── Timing ───────────────────────────────────────────────────
     static int stepIntervalMs(int bpm) {
         return std::max(1, (60 * 1000) / (bpm * 4));
     }
 
-    // ── Sérialisation ────────────────────────────────────────────
     bool saveToFile(const std::string& path) const;
     static std::optional<Pattern> loadFromFile(const std::string& path);
 };
