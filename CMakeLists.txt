@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
 # ── Qt6 ──────────────────────────────────────────────────
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
 
 # ── PortAudio ────────────────────────────────────────────
 find_package(PkgConfig REQUIRED)
@@ -46,6 +46,7 @@ target_include_directories(WakoSound PRIVATE
 
 target_link_libraries(WakoSound PRIVATE
     Qt6::Widgets
+    Qt6::Svg
     ${PORTAUDIO_LIBRARIES}
     ${SNDFILE_LIBRARIES}
     ${RUBBERBAND_LIBRARIES}
