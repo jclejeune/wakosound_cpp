@@ -18,6 +18,9 @@ public:
 signals:
     void padTriggered(int padIdx);
 
+protected:
+    void resizeEvent(QResizeEvent*) override;
+
 private:
     std::array<QPushButton*, 9> buttons_{};
 };
