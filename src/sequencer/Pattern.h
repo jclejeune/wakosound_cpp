@@ -11,31 +11,29 @@ namespace wako::seq {
 static constexpr int MAX_PADS  = 9;
 static constexpr int MAX_STEPS = 32;
 
-// ──────────────────────────────────────────────────────────────────
-// StepData — paramètres d'un step individuel
-// ──────────────────────────────────────────────────────────────────
 struct StepData {
     bool  active = false;
-    float volume = 1.0f;   // 0.0 → 1.0
-    int   pitch  = 0;      // semitones -12 → +12
-    bool  gate   = false;  // true = tronqué (override local du mode global)
+    float volume = 1.0f;
+    int   pitch  = 0;
+    bool  gate   = false;
 
     bool hasCustomParams() const {
         return volume != 1.0f || pitch != 0 || gate;
     }
 };
 
-// ──────────────────────────────────────────────────────────────────
-// Pattern — grille 2D [pad][step] de StepData
-// ──────────────────────────────────────────────────────────────────
 struct Pattern {
     std::array<std::array<StepData, MAX_STEPS>, MAX_PADS> grid{};
 
     std::array<int,  MAX_PADS> trackLengths{};
     std::array<int,  MAX_PADS> trackSteps{};
-    std::array<bool, MAX_PADS> muted{};      // mute par track
-    std::array<bool, MAX_PADS> soloed{};     // solo par track
-    std::array<bool, MAX_PADS> trackGate{};  // false=OneShot, true=Gate
+    std::array<bool, MAX_PADS> muted{};
+    std::array<bool, MAX_PADS> soloed{};
+    std::array<bool, MAX_PADS> trackGate{};
+
+    // ── Mixage ────────────────────────────────────────────────────
+    std::array<float, MAX_PADS> trackVolumes{};  // 0.0–1.0 par track
+    float masterVolume = 1.0f;                   // volume master global
 
     int bpm           = 120;
     int patternLength = 16;
@@ -46,7 +44,7 @@ struct Pattern {
         muted.fill(false);
         soloed.fill(false);
         trackGate.fill(false);
-        trackGate.fill(false);
+        trackVolumes.fill(1.0f);
     }
 
     // ── Accès ─────────────────────────────────────────────────────
@@ -59,18 +57,15 @@ struct Pattern {
     const StepData& getStepData(int pad, int step) const {
         return grid[pad][step];
     }
-
     StepData& getStepData(int pad, int step) {
         return grid[pad][step];
     }
 
-    // Vrai si au moins une track est en solo
     bool anySolo() const {
         return std::any_of(soloed.begin(), soloed.end(),
                            [](bool s){ return s; });
     }
 
-    // Est-ce que ce pad doit jouer compte tenu de mute/solo ?
     bool shouldPlay(int pad) const {
         if (anySolo()) return soloed[pad];
         return !muted[pad];
@@ -84,60 +79,57 @@ struct Pattern {
             grid[pad][step].active = v;
         return *this;
     }
-
     Pattern& toggle(int pad, int step) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
             grid[pad][step].active = !grid[pad][step].active;
         return *this;
     }
-
     Pattern& toggleGate(int pad, int step) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
             grid[pad][step].gate = !grid[pad][step].gate;
         return *this;
     }
-
     Pattern& setStepVolume(int pad, int step, float v) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
-            grid[pad][step].volume = std::clamp(v, 0.0f, 1.0f);
+            grid[pad][step].volume = std::clamp(v, 0.f, 1.f);
         return *this;
     }
-
     Pattern& setStepPitch(int pad, int step, int p) {
         if (pad >= 0 && pad < MAX_PADS && step >= 0 && step < MAX_STEPS)
             grid[pad][step].pitch = std::clamp(p, -12, 12);
         return *this;
     }
-
     Pattern& toggleTrackGate(int pad) {
-        if (pad >= 0 && pad < MAX_PADS)
-            trackGate[pad] = !trackGate[pad];
+        if (pad >= 0 && pad < MAX_PADS) trackGate[pad] = !trackGate[pad];
         return *this;
     }
-
     Pattern& toggleMute(int pad) {
-        if (pad >= 0 && pad < MAX_PADS)
-            muted[pad] = !muted[pad];
+        if (pad >= 0 && pad < MAX_PADS) muted[pad] = !muted[pad];
         return *this;
     }
-
     Pattern& toggleSolo(int pad) {
-        if (pad >= 0 && pad < MAX_PADS)
-            soloed[pad] = !soloed[pad];
+        if (pad >= 0 && pad < MAX_PADS) soloed[pad] = !soloed[pad];
         return *this;
     }
-
-    // Reset complet — notes + gate + mute/solo + longueurs
+    Pattern& setTrackVolume(int pad, float v) {
+        if (pad >= 0 && pad < MAX_PADS)
+            trackVolumes[pad] = std::clamp(v, 0.f, 1.f);
+        return *this;
+    }
+    Pattern& setMasterVolume(float v) {
+        masterVolume = std::clamp(v, 0.f, 1.f);
+        return *this;
+    }
     Pattern& clearAll() {
         for (auto& row : grid) row.fill(StepData{});
         trackSteps.fill(0);
         muted.fill(false);
         soloed.fill(false);
         trackGate.fill(false);
-        trackGate.fill(false);
+        trackVolumes.fill(1.0f);
+        masterVolume = 1.0f;
         return *this;
     }
-
     Pattern& clearPad(int pad) {
         if (pad >= 0 && pad < MAX_PADS) {
             grid[pad].fill(StepData{});
@@ -145,18 +137,12 @@ struct Pattern {
         }
         return *this;
     }
-
-    Pattern& setBpm(int b) {
-        bpm = std::max(1, std::min(9999, b));
-        return *this;
-    }
-
+    Pattern& setBpm(int b)  { bpm = std::max(1, std::min(9999, b)); return *this; }
     Pattern& setLength(int l) {
         patternLength = std::max(1, std::min(MAX_STEPS, l));
         trackLengths.fill(patternLength);
         return *this;
     }
-
     Pattern& setTrackLength(int pad, int l) {
         if (pad >= 0 && pad < MAX_PADS)
             trackLengths[pad] = std::max(1, std::min(MAX_STEPS, l));

@@ -13,6 +13,7 @@ class PadGrid;
 class StepGrid;
 class TransportBar;
 class SampleBrowser;
+class MixerPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -41,6 +42,7 @@ private:
 
     PadGrid*       padGrid_       = nullptr;
     StepGrid*      stepGrid_      = nullptr;
+    MixerPanel*    mixerPanel_    = nullptr;
     TransportBar*  transportBar_  = nullptr;
     SampleBrowser* sampleBrowser_ = nullptr;
     QTabWidget*    tabs_          = nullptr;

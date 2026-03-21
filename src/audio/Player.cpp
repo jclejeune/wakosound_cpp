@@ -60,15 +60,13 @@ void Player::shutdown() {
     }
 }
 
-int Player::play(const std::string& filePath, float volume, int pitch, bool gate) {
-    // pitch == 0 → AudioCache direct
-    // pitch != 0 → PitchCache (RubberBand offline, mis en cache)
+int Player::play(const std::string& filePath, float volume,
+                 int pitch, bool gate, int padIdx) {
     const AudioBuffer* buf = (pitch == 0)
         ? AudioCache::instance().get(filePath)
         : PitchCache::instance().get(filePath, pitch);
-
     if (!buf) return -1;
-    return voicePool_.play(buf, volume, gate);
+    return voicePool_.play(buf, volume, gate, padIdx);
 }
 
 void Player::stop(int voiceId)  { voicePool_.stop(voiceId); }
@@ -78,7 +76,8 @@ int Player::paCallback(const void*, void* output, unsigned long frames,
                        const PaStreamCallbackTimeInfo*,
                        PaStreamCallbackFlags, void* userData) {
     auto* self = static_cast<Player*>(userData);
-    self->voicePool_.mix(static_cast<float*>(output), frames);
+    float mv   = self->masterVolume_.load(std::memory_order_relaxed);
+    self->voicePool_.mix(static_cast<float*>(output), frames, mv);
     return paContinue;
 }
 

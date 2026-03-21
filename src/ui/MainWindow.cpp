@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "PadGrid.h"
 #include "StepGrid.h"
+#include "MixerPanel.h"
 #include "TransportBar.h"
 #include "SampleBrowser.h"
 #include "SvgIcons.h"
@@ -18,6 +19,14 @@ static const int NUMPAD_KEYS[] = {
     Qt::Key_4, Qt::Key_5, Qt::Key_6,
     Qt::Key_1, Qt::Key_2, Qt::Key_3
 };
+
+// Icône console de mixage
+static constexpr const char* MIXER_SVG = R"(
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <path fill="%%COLOR%%" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10
+    16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14
+    4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/>
+</svg>)";
 
 namespace wako::ui {
 
@@ -57,10 +66,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     sampleBrowser_->setMaximumWidth(SIDEBAR_MAX);
     splitter_->addWidget(sampleBrowser_);
 
-    // ── Tabs : Sampler | Séquenceur ───────────────────────────────
-    padGrid_  = new PadGrid(splitter_);
-    stepGrid_ = new StepGrid(pattern_, splitter_);
+    // ── Tabs ──────────────────────────────────────────────────────
+    padGrid_    = new PadGrid(splitter_);
+    stepGrid_   = new StepGrid(pattern_, splitter_);
+    mixerPanel_ = new MixerPanel(pattern_, splitter_);
+
     stepGrid_->setKit(kitManager_->currentKit());
+    mixerPanel_->setKit(kitManager_->currentKit());
 
     auto* samplerTab = new QWidget;
     auto* samplerLay = new QVBoxLayout(samplerTab);
@@ -74,8 +86,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     tabs_ = new QTabWidget(splitter_);
     tabs_->setStyleSheet("QTabBar::tab { padding: 6px 14px; font-size: 12px; }");
-    tabs_->addTab(samplerTab, icons::icon(icons::GRID,       14), "Sampler");
-    tabs_->addTab(seqTab,     icons::icon(icons::MUSIC_NOTE, 14), "Séquenceur");
+    tabs_->addTab(samplerTab,  icons::icon(icons::GRID,       14), "Sampler");
+    tabs_->addTab(seqTab,      icons::icon(icons::MUSIC_NOTE, 14), "Séquenceur");
+    tabs_->addTab(mixerPanel_, icons::icon(MIXER_SVG,         14), "Mixage");
     splitter_->addWidget(tabs_);
 
     splitter_->setCollapsible(0, false);
@@ -92,6 +105,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
         padGrid_->refresh(kitManager_->currentKit());
         stepGrid_->setKit(kitManager_->currentKit());
+        mixerPanel_->setKit(kitManager_->currentKit());
     });
 
     connect(padGrid_, &PadGrid::padTriggered, this, [this](int idx) {
@@ -99,7 +113,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (!kit) return;
         const auto* pad = kit->pad(idx);
         if (pad && pad->enabled && !pad->filePath.empty())
-            audio::Player::instance().play(pad->filePath, pad->volume);
+            audio::Player::instance().play(pad->filePath, pad->volume,
+                                           0, false, idx);
     });
 
     connect(transportBar_, &TransportBar::playStopClicked, this, &MainWindow::onPlayStop);
@@ -123,6 +138,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (!loaded) { QMessageBox::warning(this, "Erreur", "Fichier invalide."); return; }
         *pattern_ = *loaded;
         stepGrid_->updatePattern(pattern_.get());
+        // Sync master volume Player ← pattern chargé
+        audio::Player::instance().setMasterVolume(pattern_->masterVolume);
     });
 
     connect(stepGrid_, &StepGrid::stepToggled, this, [this](int pad, int step) {
@@ -184,6 +201,9 @@ void MainWindow::onClear() {
     stepGrid_->setCurrentStep(-1);
     stepGrid_->updatePattern(pattern_.get());
     transportBar_->setStep(0);
+    // Resync master volume
+    audio::Player::instance().setMasterVolume(1.0f);
+    mixerPanel_->resetAll();
 }
 
 void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
@@ -204,6 +224,7 @@ void MainWindow::onPadFileDropped(int padIdx, const QString& filePath) {
     audio::AudioCache::instance().preload({filePath.toStdString()});
     padGrid_->refresh(kitManager_->currentKit());
     stepGrid_->setKit(kitManager_->currentKit());
+    mixerPanel_->setKit(kitManager_->currentKit());
     tabs_->setCurrentIndex(0);
 }
 

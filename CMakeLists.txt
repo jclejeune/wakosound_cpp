@@ -6,20 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-# ── Qt6 ──────────────────────────────────────────────────
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
-
-# ── PortAudio ────────────────────────────────────────────
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
-
-# ── libsndfile ───────────────────────────────────────────
-pkg_check_modules(SNDFILE REQUIRED sndfile)
-
-# ── RubberBand ───────────────────────────────────────────
+pkg_check_modules(SNDFILE   REQUIRED sndfile)
 pkg_check_modules(RUBBERBAND REQUIRED rubberband)
 
-# ── Sources ──────────────────────────────────────────────
 set(SOURCES
     src/main.cpp
     resources.qrc
@@ -34,7 +26,8 @@ set(SOURCES
     src/ui/PadGrid.cpp
     src/ui/StepGrid.cpp
     src/ui/TransportBar.cpp
-    src/ui/SampleBrowser.cpp      # ← nouveau
+    src/ui/SampleBrowser.cpp
+    src/ui/MixerPanel.cpp
 )
 
 add_executable(WakoSound ${SOURCES})
@@ -61,7 +54,6 @@ target_compile_options(WakoSound PRIVATE
     ${RUBBERBAND_CFLAGS_OTHER}
 )
 
-# ── Resources ────────────────────────────────────────────
 configure_file(
     ${CMAKE_SOURCE_DIR}/resources/kits/kits.json
     ${CMAKE_BINARY_DIR}/kits.json

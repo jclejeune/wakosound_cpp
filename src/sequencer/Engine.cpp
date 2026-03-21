@@ -64,11 +64,9 @@ void Engine::loop(std::shared_ptr<Pattern>           patternPtr,
 
         auto interval = milliseconds(Pattern::stepIntervalMs(currentBpm));
         auto target   = startTime + tickCount * interval;
-        auto sleepFor = duration_cast<milliseconds>(
-                            target - steady_clock::now());
+        auto sleepFor = duration_cast<milliseconds>(target - steady_clock::now());
 
         sleepInterruptible(sleepFor, running_);
-
         if (!running_.load()) break;
 
         TrackSteps currentSteps = pat.trackSteps;
@@ -89,31 +87,29 @@ void Engine::playPads(const std::vector<int>&  activePads,
     const auto* currentKit = kit.currentKit();
     if (!currentKit) return;
 
-    // Stopper les voix gate du tick précédent pour les tracks en gate
-    for (auto& [padIdx, voiceId] : activeVoices_) {
+    // Stopper les voix gate du tick précédent
+    for (auto& [padIdx, voiceId] : activeVoices_)
         if (pat.trackGate[padIdx])
             player.stop(voiceId);
-    }
-    // Nettoyer les voix des tracks en gate
-    for (int i = 0; i < seq::MAX_PADS; ++i)
+    for (int i = 0; i < MAX_PADS; ++i)
         if (pat.trackGate[i])
             activeVoices_.erase(i);
 
     for (int padIdx : activePads) {
-        // Mute / Solo
         if (!pat.shouldPlay(padIdx)) continue;
 
         const model::Pad* pad = currentKit->pad(padIdx);
         if (!pad || !pad->enabled || pad->filePath.empty()) continue;
 
-        const StepData& sd        = pat.getStepData(padIdx, currentSteps[padIdx]);
-        float           stepVol   = pad->volume * sd.volume;
-        int             stepPitch = sd.pitch;
+        const StepData& sd = pat.getStepData(padIdx, currentSteps[padIdx]);
 
-        // Gate : track gate OU step gate local
-        bool useGate = pat.trackGate[padIdx] || sd.gate;
+        // Volume : pad × step × track mixer
+        float stepVol = pad->volume * sd.volume * pat.trackVolumes[padIdx];
+        int   stepPitch = sd.pitch;
+        bool  useGate   = pat.trackGate[padIdx] || sd.gate;
 
-        int voiceId = player.play(pad->filePath, stepVol, stepPitch, useGate);
+        int voiceId = player.play(pad->filePath, stepVol, stepPitch,
+                                  useGate, padIdx);
 
         if (useGate && voiceId >= 0)
             activeVoices_[padIdx] = voiceId;
