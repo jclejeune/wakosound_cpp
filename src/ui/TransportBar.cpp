@@ -5,20 +5,19 @@
 #include <QSpinBox>
 #include <QFrame>
 #include <QResizeEvent>
-#include <QToolButton>
 #include <QTimer>
 
 namespace wako::ui {
 
 static const QString BAR_STYLE = R"(
-QWidget       { background: #3C3F41; }
+QWidget { background: #3C3F41; }
 QToolButton {
     background: transparent; color: #DCDCDC;
     border: none; padding: 3px 8px;
     border-radius: 4px; font-size: 10px;
 }
-QToolButton:hover  { background: #505050; }
-QToolButton:pressed{ background: #3a3a3a; }
+QToolButton:hover   { background: #505050; }
+QToolButton:pressed { background: #3a3a3a; }
 QSpinBox {
     background: #4D4D4D; color: #DCDCDC;
     border: 1px solid #555; border-radius: 3px;
@@ -85,31 +84,26 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     lay->setContentsMargins(10, 4, 10, 4);
     lay->setSpacing(4);
 
-    // ── Fichiers ──────────────────────────────────────────────────
     auto* saveBtn = makeBtn(icons::SAVE,        "Save");
     auto* loadBtn = makeBtn(icons::FOLDER_OPEN, "Open");
     connect(saveBtn, &QToolButton::clicked, this, &TransportBar::saveClicked);
     connect(loadBtn, &QToolButton::clicked, this, &TransportBar::loadClicked);
 
-    // ── Kit selector ──────────────────────────────────────────────
     kitCombo_ = new QComboBox;
     connect(kitCombo_, qOverload<int>(&QComboBox::currentIndexChanged),
             this, &TransportBar::kitChanged);
 
-    // ── Transport ─────────────────────────────────────────────────
-    playBtn_   = makeBtn(icons::PLAY,  "Play");
+    playBtn_       = makeBtn(icons::PLAY,  "Play");
     auto* clearBtn = makeBtn(icons::CLEAR, "Clear");
     connect(playBtn_,  &QToolButton::clicked, this, &TransportBar::playStopClicked);
     connect(clearBtn,  &QToolButton::clicked, this, &TransportBar::clearClicked);
 
-    // ── Step LCD ──────────────────────────────────────────────────
     stepLcd_ = new QLabel(" 1");
     stepLcd_->setObjectName("lcd");
     stepLcd_->setAlignment(Qt::AlignCenter);
     stepLcd_->setFont(icons::lcdFont(20));
     stepSection_ = makeSection("Step", stepLcd_);
 
-    // ── BPM — debounce 400ms ──────────────────────────────────────
     auto* bpmSpin = new QSpinBox;
     bpmSpin->setRange(1, 9999);
     bpmSpin->setValue(120);
@@ -117,13 +111,12 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     auto* bpmDebounce = new QTimer(this);
     bpmDebounce->setSingleShot(true);
     bpmDebounce->setInterval(400);
-    connect(bpmSpin, &QSpinBox::valueChanged, this,
-            [bpmDebounce](int) { bpmDebounce->start(); });
-    connect(bpmDebounce, &QTimer::timeout, this,
-            [bpmSpin, this] { emit bpmChanged(bpmSpin->value()); });
+    connect(bpmSpin, &QSpinBox::valueChanged,
+            this, [bpmDebounce](int) { bpmDebounce->start(); });
+    connect(bpmDebounce, &QTimer::timeout,
+            this, [bpmSpin, this] { emit bpmChanged(bpmSpin->value()); });
     bpmSection_ = makeSection("BPM", bpmSpin);
 
-    // ── Steps ─────────────────────────────────────────────────────
     auto* stepSpin = new QSpinBox;
     stepSpin->setRange(1, 32);
     stepSpin->setValue(16);
@@ -131,7 +124,6 @@ TransportBar::TransportBar(QWidget* parent) : QWidget(parent) {
     connect(stepSpin, &QSpinBox::valueChanged, this, &TransportBar::lengthChanged);
     stepsSection_ = makeSection("Steps", stepSpin);
 
-    // ── Layout ────────────────────────────────────────────────────
     lay->addWidget(saveBtn);
     lay->addWidget(loadBtn);
     lay->addSpacing(2);

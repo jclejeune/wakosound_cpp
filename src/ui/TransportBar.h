@@ -28,9 +28,9 @@ protected:
     void resizeEvent(QResizeEvent*) override;
 
 private:
-    QToolButton* playBtn_     = nullptr;
-    QLabel*      stepLcd_     = nullptr;
-    QComboBox*   kitCombo_    = nullptr;
+    QToolButton* playBtn_      = nullptr;
+    QLabel*      stepLcd_      = nullptr;
+    QComboBox*   kitCombo_     = nullptr;
     QWidget*     stepSection_  = nullptr;
     QWidget*     bpmSection_   = nullptr;
     QWidget*     stepsSection_ = nullptr;

@@ -34,6 +34,7 @@ set(SOURCES
     src/ui/PadGrid.cpp
     src/ui/StepGrid.cpp
     src/ui/TransportBar.cpp
+    src/ui/SampleBrowser.cpp      # ← nouveau
 )
 
 add_executable(WakoSound ${SOURCES})

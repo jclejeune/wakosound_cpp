@@ -34,16 +34,14 @@ inline QFont lcdFont(int size = 20) {
     static int fontId = -1;
     if (fontId < 0) {
         fontId = QFontDatabase::addApplicationFont(":/resources/fonts/lcd.ttf");
-        if (fontId < 0) {
-            // Fallback si la font n'est pas trouvée
+        if (fontId < 0)
             return QFont("Monospace", size, QFont::Bold);
-        }
     }
     QString family = QFontDatabase::applicationFontFamilies(fontId).first();
     return QFont(family, size);
 }
 
-// ── Icônes Material ───────────────────────────────────────────────
+// ── Icônes ────────────────────────────────────────────────────────
 
 inline constexpr const char* PLAY = R"(
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
@@ -98,6 +96,14 @@ inline constexpr const char* LIBRARY = R"(
   <path fill="%%COLOR%%" d="M4 6H2v14a2 2 0 002 2h14v-2H4V6zm16-4H8a2 2 0
     00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0
     00-2-2zm-1 9H9V9h10v2zm-4 4H9v-2h6v2zm4-8H9V5h10v2z"/>
+</svg>)";
+
+// Panel latéral — deux colonnes verticales dont une plus large (sidebar)
+inline constexpr const char* SIDEBAR = R"(
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <path fill="%%COLOR%%" d="M3 3h18a1 1 0 011 1v16a1 1 0 01-1
+    1H3a1 1 0 01-1-1V4a1 1 0 011-1zm1 2v14h6V5H4zm8
+    0v14h8V5h-8z"/>
 </svg>)";
 
 } // namespace wako::ui::icons

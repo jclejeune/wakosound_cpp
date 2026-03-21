@@ -2,14 +2,11 @@
 #include "PadGrid.h"
 #include "StepGrid.h"
 #include "TransportBar.h"
+#include "SampleBrowser.h"
 #include "SvgIcons.h"
 #include "../audio/AudioCache.h"
 #include "../audio/Player.h"
-#include <QTabWidget>
 #include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QLabel>
-#include <QComboBox>
 #include <QKeyEvent>
 #include <QMetaObject>
 #include <QFileDialog>
@@ -26,37 +23,44 @@ namespace wako::ui {
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("WakoSound");
-    resize(760, 600);
+    resize(1020, 640);
 
     kitManager_ = std::make_shared<model::KitManager>();
     pattern_    = std::make_shared<seq::Pattern>();
     engine_     = std::make_unique<seq::Engine>();
 
-    if (!kitManager_->loadFromFile("kits.json"))
+    if (!kitManager_->loadFactory("kits.json"))
         std::cerr << "[MainWindow] kits.json introuvable\n";
 
     audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
 
-    // ── Widget central ────────────────────────────────────────────
+    // ── Layout racine ─────────────────────────────────────────────
     auto* central    = new QWidget(this);
     setCentralWidget(central);
-    auto* mainLayout = new QVBoxLayout(central);
-    mainLayout->setSpacing(0);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
+    auto* rootLayout = new QVBoxLayout(central);
+    rootLayout->setSpacing(0);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
 
-    // ── Transport bar — toujours visible en haut ──────────────────
     transportBar_ = new TransportBar(this);
-    mainLayout->addWidget(transportBar_);
+    rootLayout->addWidget(transportBar_);
+    refreshKitCombo();
 
-    // ── Kits dans la transport bar ───────────────────────────────
-    QStringList kitNames;
-    for (const auto& k : kitManager_->kits())
-        kitNames << QString::fromStdString(k.name);
-    transportBar_->setKits(kitNames, kitManager_->currentIndex());
+    // ── Splitter : sidebar | contenu ─────────────────────────────
+    splitter_ = new QSplitter(Qt::Horizontal, central);
+    splitter_->setHandleWidth(3);
+    splitter_->setStyleSheet(
+        "QSplitter::handle { background: #2A2A2D; }"
+        "QSplitter::handle:hover { background: #4A6A9A; }");
 
-    // ── Tabs — icônes SVG ─────────────────────────────────────────
-    padGrid_  = new PadGrid(this);
-    stepGrid_ = new StepGrid(pattern_, this);
+    sampleBrowser_ = new SampleBrowser(splitter_);
+    sampleBrowser_->setMinimumWidth(SIDEBAR_MIN);
+    sampleBrowser_->setMaximumWidth(SIDEBAR_MAX);
+    splitter_->addWidget(sampleBrowser_);
+
+    // ── Tabs : Sampler | Séquenceur ───────────────────────────────
+    padGrid_  = new PadGrid(splitter_);
+    stepGrid_ = new StepGrid(pattern_, splitter_);
+    stepGrid_->setKit(kitManager_->currentKit());
 
     auto* samplerTab = new QWidget;
     auto* samplerLay = new QVBoxLayout(samplerTab);
@@ -68,34 +72,27 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     seqLay->setContentsMargins(0, 0, 0, 0);
     seqLay->addWidget(stepGrid_, 1);
 
-    auto* libTab = new QWidget;
-    auto* libLay = new QVBoxLayout(libTab);
-    auto* libLabel = new QLabel("Bibliothèque — à venir");
-    libLabel->setAlignment(Qt::AlignCenter);
-    libLabel->setStyleSheet("color: #666; font-size: 14px;");
-    libLay->addWidget(libLabel);
-
-    tabs_ = new QTabWidget;
-    tabs_->setStyleSheet(
-        "QTabBar::tab { padding: 6px 14px; font-size: 12px; }"
-    );
+    tabs_ = new QTabWidget(splitter_);
+    tabs_->setStyleSheet("QTabBar::tab { padding: 6px 14px; font-size: 12px; }");
     tabs_->addTab(samplerTab, icons::icon(icons::GRID,       14), "Sampler");
     tabs_->addTab(seqTab,     icons::icon(icons::MUSIC_NOTE, 14), "Séquenceur");
-    tabs_->addTab(libTab,     icons::icon(icons::LIBRARY,    14), "Bibliothèque");
+    splitter_->addWidget(tabs_);
 
-    mainLayout->addWidget(tabs_, 1);
+    splitter_->setCollapsible(0, false);
+    splitter_->setCollapsible(1, false);
+    splitter_->setSizes({SIDEBAR_DEFAULT, 1020 - SIDEBAR_DEFAULT});
 
-    // ── Connexions ────────────────────────────────────────────────
+    rootLayout->addWidget(splitter_, 1);
+
     padGrid_->refresh(kitManager_->currentKit());
 
-    connect(transportBar_, &TransportBar::kitChanged,
-            this, [this](int idx) {
-                kitManager_->switchTo(idx);
-                audio::AudioCache::instance().preload(
-                    kitManager_->currentKitFilePaths());
-                padGrid_->refresh(kitManager_->currentKit());
-                stepGrid_->setKit(kitManager_->currentKit());
-            });
+    // ── Connexions ────────────────────────────────────────────────
+    connect(transportBar_, &TransportBar::kitChanged, this, [this](int idx) {
+        kitManager_->switchTo(idx);
+        audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
+        padGrid_->refresh(kitManager_->currentKit());
+        stepGrid_->setKit(kitManager_->currentKit());
+    });
 
     connect(padGrid_, &PadGrid::padTriggered, this, [this](int idx) {
         const auto* kit = kitManager_->currentKit();
@@ -112,8 +109,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(transportBar_, &TransportBar::saveClicked, this, [this] {
         QString path = QFileDialog::getSaveFileName(
-            this, "Sauvegarder le pattern", "pattern.json",
-            "Pattern JSON (*.json)");
+            this, "Sauvegarder le pattern", "pattern.json", "Pattern JSON (*.json)");
         if (path.isEmpty()) return;
         if (!pattern_->saveToFile(path.toStdString()))
             QMessageBox::warning(this, "Erreur", "Impossible de sauvegarder.");
@@ -124,10 +120,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             this, "Charger un pattern", "", "Pattern JSON (*.json)");
         if (path.isEmpty()) return;
         auto loaded = seq::Pattern::loadFromFile(path.toStdString());
-        if (!loaded) {
-            QMessageBox::warning(this, "Erreur", "Fichier invalide.");
-            return;
-        }
+        if (!loaded) { QMessageBox::warning(this, "Erreur", "Fichier invalide."); return; }
         *pattern_ = *loaded;
         stepGrid_->updatePattern(pattern_.get());
     });
@@ -136,47 +129,40 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         pattern_->toggle(pad, step);
         stepGrid_->updatePattern(pattern_.get());
     });
+    connect(stepGrid_, &StepGrid::stepGateToggled,   this, [this](int,int)               { stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::stepDataChanged,   this, [this](int,int,seq::StepData) { stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::trackGateToggled,  this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::trackMuteToggled,  this, [this](int pad) { pattern_->toggleMute(pad);      stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::trackSoloToggled,  this, [this](int pad) { pattern_->toggleSolo(pad);      stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int,int){});
 
-    connect(stepGrid_, &StepGrid::stepGateToggled,
-            this, [this](int, int) { stepGrid_->update(); });
-
-    connect(stepGrid_, &StepGrid::stepDataChanged,
-            this, [this](int, int, seq::StepData) { stepGrid_->update(); });
-
-    connect(stepGrid_, &StepGrid::trackGateToggled,
-            this, [this](int pad) {
-                pattern_->toggleTrackGate(pad);
-                stepGrid_->update();
+    connect(sampleBrowser_, &SampleBrowser::samplePreviewRequested,
+            this, [this](const QString& path) {
+                audio::Player::instance().play(path.toStdString(), 1.0f);
             });
 
-    connect(stepGrid_, &StepGrid::trackMuteToggled,
-            this, [this](int pad) {
-                pattern_->toggleMute(pad);
-                stepGrid_->update();
-            });
-
-    connect(stepGrid_, &StepGrid::trackSoloToggled,
-            this, [this](int pad) {
-                pattern_->toggleSolo(pad);
-                stepGrid_->update();
-            });
-
-    connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int, int) {});
+    connect(padGrid_, &PadGrid::padFileDropped,
+            this, &MainWindow::onPadFileDropped);
 }
 
 MainWindow::~MainWindow() {
     if (engine_) engine_->stop();
 }
 
-// ── Slots ─────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
+void MainWindow::refreshKitCombo() {
+    QStringList names;
+    for (const auto& k : kitManager_->kits())
+        names << QString::fromStdString(k.name);
+    transportBar_->setKits(names, kitManager_->currentIndex());
+}
 
 void MainWindow::onPlayStop() {
     if (engine_->isRunning()) {
         stopSequencer();
     } else {
         pattern_->trackSteps.fill(0);
-        engine_->start(
-            pattern_, kitManager_,
+        engine_->start(pattern_, kitManager_,
             [this](const seq::TrackSteps& steps) { onSequencerStep(steps); });
         transportBar_->setPlaying(true);
     }
@@ -191,10 +177,7 @@ void MainWindow::stopSequencer() {
 }
 
 void MainWindow::onClear() {
-    if (engine_->isRunning()) {
-        engine_->stop();
-        transportBar_->setPlaying(false);
-    }
+    if (engine_->isRunning()) { engine_->stop(); transportBar_->setPlaying(false); }
     pattern_->clearAll();
     pattern_->setLength(16);
     pattern_->trackSteps.fill(0);
@@ -204,35 +187,43 @@ void MainWindow::onClear() {
 }
 
 void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
+void MainWindow::onLengthChanged(int len) { pattern_->setLength(len); stepGrid_->updatePattern(pattern_.get()); }
 
-void MainWindow::onLengthChanged(int len) {
-    pattern_->setLength(len);
-    stepGrid_->updatePattern(pattern_.get());
+void MainWindow::onPadFileDropped(int padIdx, const QString& filePath) {
+    const auto* cur = kitManager_->currentKit();
+    if (cur && cur->isFactory) {
+        model::Kit copy = *cur;
+        copy.name      += " (custom)";
+        copy.id         = "";
+        copy.isFactory  = false;
+        int idx = kitManager_->upsertUserKit(std::move(copy));
+        kitManager_->switchTo(idx);
+        refreshKitCombo();
+    }
+    if (!kitManager_->setPadFile(padIdx, filePath.toStdString())) return;
+    audio::AudioCache::instance().preload({filePath.toStdString()});
+    padGrid_->refresh(kitManager_->currentKit());
+    stepGrid_->setKit(kitManager_->currentKit());
+    tabs_->setCurrentIndex(0);
 }
 
-// ── Callback séquenceur → flash pads + highlight grille ───────────
 void MainWindow::onSequencerStep(const seq::TrackSteps& steps) {
     QMetaObject::invokeMethod(this, [this, steps] {
         stepGrid_->setCurrentSteps(steps);
         transportBar_->setStep(steps[0]);
-
-        // Flash des pads actifs sur ce tick
         const auto* kit = kitManager_->currentKit();
         if (!kit) return;
         for (int p = 0; p < seq::MAX_PADS; ++p) {
             if (!pattern_->shouldPlay(p)) continue;
-            const seq::StepData& sd = pattern_->grid[p][steps[p]];
-            if (sd.active)
+            if (pattern_->grid[p][steps[p]].active)
                 padGrid_->flashPad(p);
         }
     }, Qt::QueuedConnection);
 }
 
-// ── Numpad ────────────────────────────────────────────────────────
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-    int key = event->key();
     for (int i = 0; i < 9; ++i) {
-        if (key == NUMPAD_KEYS[i]) {
+        if (event->key() == NUMPAD_KEYS[i]) {
             emit padGrid_->padTriggered(i);
             padGrid_->flashPad(i);
             return;
