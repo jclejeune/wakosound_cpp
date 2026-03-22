@@ -8,26 +8,42 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
-pkg_check_modules(SNDFILE   REQUIRED sndfile)
+pkg_check_modules(PORTAUDIO  REQUIRED portaudio-2.0)
+pkg_check_modules(SNDFILE    REQUIRED sndfile)
 pkg_check_modules(RUBBERBAND REQUIRED rubberband)
 
 set(SOURCES
     src/main.cpp
     resources.qrc
+
+    # Audio
     src/audio/AudioCache.cpp
     src/audio/PitchCache.cpp
     src/audio/VoicePool.cpp
     src/audio/Player.cpp
+    src/audio/EffectChain.cpp
+
+    # Effects
+    src/audio/effects/EQ5.cpp
+    src/audio/effects/Saturator.cpp
+    src/audio/effects/Reverb.cpp
+    src/audio/effects/Delay.cpp
+
+    # Model
     src/model/KitManager.cpp
+
+    # Sequencer
     src/sequencer/Pattern.cpp
     src/sequencer/Engine.cpp
+
+    # UI
     src/ui/MainWindow.cpp
     src/ui/PadGrid.cpp
     src/ui/StepGrid.cpp
     src/ui/TransportBar.cpp
     src/ui/SampleBrowser.cpp
     src/ui/MixerPanel.cpp
+    src/ui/EffectWindow.cpp
 )
 
 add_executable(WakoSound ${SOURCES})

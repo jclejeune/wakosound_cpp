@@ -3,17 +3,20 @@
 #include "../model/KitManager.h"
 #include <QWidget>
 #include <QTimer>
+#include <QPushButton>
 #include <memory>
+#include <array>
 
 namespace wako::ui {
 
+class EffectWindow;
+
 // ── VuMeter ───────────────────────────────────────────────────────
-// Widget vertical : segments colorés + peak hold + décroissance
 class VuMeter : public QWidget {
     Q_OBJECT
 public:
     explicit VuMeter(QWidget* parent = nullptr);
-    void setLevel(float level);   // 0.0–1.0, appelé depuis QTimer
+    void setLevel(float level);
     void setPeakHold(float peak);
 
 protected:
@@ -26,42 +29,46 @@ private:
 };
 
 // ── MixerPanel ────────────────────────────────────────────────────
-// Onglet mixage : 9 strips track + 1 strip master
-// Chaque strip : label | VuMeter | QSlider vertical
 class MixerPanel : public QWidget {
     Q_OBJECT
 public:
     explicit MixerPanel(std::shared_ptr<seq::Pattern> pattern,
                         QWidget* parent = nullptr);
+    ~MixerPanel();
 
-    // Mise à jour des labels (appelé au changement de kit)
     void setKit(const model::Kit* kit);
-
-    // Reset tous les faders à 1.0
     void resetAll();
 
 signals:
     void trackVolumeChanged(int pad, float volume);
     void masterVolumeChanged(float volume);
+    void trackMuteToggled(int pad);
+    void trackSoloToggled(int pad);
+
+private slots:
+    void onTimer();
 
 private:
-    void onTimer();
     void buildStrip(int pad, QWidget* container);
     void buildMasterStrip(QWidget* container);
+    void updateMuteSoloButtons();
 
     std::shared_ptr<seq::Pattern> pattern_;
 
-    // Par track
-    std::array<VuMeter*, seq::MAX_PADS> trackVu_{};
-    std::array<QWidget*, seq::MAX_PADS> trackLabels_{};   // QLabel*
+    std::array<VuMeter*,     seq::MAX_PADS> trackVu_{};
+    std::array<QWidget*,     seq::MAX_PADS> trackLabels_{};
+    std::array<QPushButton*, seq::MAX_PADS> muteButtons_{};
+    std::array<QPushButton*, seq::MAX_PADS> soloButtons_{};
+    std::array<QPushButton*, seq::MAX_PADS> fxButtons_{};
+    std::array<EffectWindow*, seq::MAX_PADS + 1> fxWindows_{};  // +1 master
 
-    // Master
     VuMeter* masterVuL_ = nullptr;
     VuMeter* masterVuR_ = nullptr;
+    QPushButton* masterFxBtn_ = nullptr;
 
     QTimer* timer_ = nullptr;
 
-    static constexpr int TIMER_MS = 33;   // ~30 fps
+    static constexpr int TIMER_MS = 33;
 };
 
 } // namespace wako::ui

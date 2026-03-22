@@ -15,6 +15,14 @@ Player::~Player() { shutdown(); }
 bool Player::init(int sampleRate, int framesPerBuffer) {
     sampleRate_ = sampleRate;
 
+    // Initialiser toutes les chains avec le sample rate
+    for (auto& c : chains_) c.setSampleRate(sampleRate);
+
+    // Brancher les chains sur le VoicePool
+    for (int i = 0; i < MAX_PADS_METER; ++i)
+        voicePool_.setTrackChain(i, &chains_[i]);
+    voicePool_.setMasterChain(&chains_[MASTER_CHAIN]);
+
     PaError err = Pa_Initialize();
     if (err != paNoError) {
         std::cerr << "[Player] Pa_Initialize: " << Pa_GetErrorText(err) << "\n";
@@ -33,17 +41,13 @@ bool Player::init(int sampleRate, int framesPerBuffer) {
                         paClipOff, &Player::paCallback, this);
     if (err != paNoError) {
         std::cerr << "[Player] Pa_OpenStream: " << Pa_GetErrorText(err) << "\n";
-        Pa_Terminate();
-        return false;
+        Pa_Terminate(); return false;
     }
 
     err = Pa_StartStream(stream_);
     if (err != paNoError) {
         std::cerr << "[Player] Pa_StartStream: " << Pa_GetErrorText(err) << "\n";
-        Pa_CloseStream(stream_);
-        Pa_Terminate();
-        stream_ = nullptr;
-        return false;
+        Pa_CloseStream(stream_); Pa_Terminate(); stream_ = nullptr; return false;
     }
 
     std::cout << "[Player] Stream ouvert — "
@@ -53,10 +57,8 @@ bool Player::init(int sampleRate, int framesPerBuffer) {
 
 void Player::shutdown() {
     if (stream_) {
-        Pa_StopStream(stream_);
-        Pa_CloseStream(stream_);
-        stream_ = nullptr;
-        Pa_Terminate();
+        Pa_StopStream(stream_); Pa_CloseStream(stream_);
+        stream_ = nullptr; Pa_Terminate();
     }
 }
 

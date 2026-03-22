@@ -20,7 +20,6 @@ static const int NUMPAD_KEYS[] = {
     Qt::Key_1, Qt::Key_2, Qt::Key_3
 };
 
-// Icône console de mixage
 static constexpr const char* MIXER_SVG = R"(
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <path fill="%%COLOR%%" d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10
@@ -99,7 +98,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     padGrid_->refresh(kitManager_->currentKit());
 
-    // ── Connexions ────────────────────────────────────────────────
+    // ── Connexions transport ──────────────────────────────────────
     connect(transportBar_, &TransportBar::kitChanged, this, [this](int idx) {
         kitManager_->switchTo(idx);
         audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
@@ -138,10 +137,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (!loaded) { QMessageBox::warning(this, "Erreur", "Fichier invalide."); return; }
         *pattern_ = *loaded;
         stepGrid_->updatePattern(pattern_.get());
-        // Sync master volume Player ← pattern chargé
         audio::Player::instance().setMasterVolume(pattern_->masterVolume);
     });
 
+    // ── StepGrid ──────────────────────────────────────────────────
     connect(stepGrid_, &StepGrid::stepToggled, this, [this](int pad, int step) {
         pattern_->toggle(pad, step);
         stepGrid_->updatePattern(pattern_.get());
@@ -149,10 +148,30 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(stepGrid_, &StepGrid::stepGateToggled,   this, [this](int,int)               { stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::stepDataChanged,   this, [this](int,int,seq::StepData) { stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackGateToggled,  this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
-    connect(stepGrid_, &StepGrid::trackMuteToggled,  this, [this](int pad) { pattern_->toggleMute(pad);      stepGrid_->update(); });
-    connect(stepGrid_, &StepGrid::trackSoloToggled,  this, [this](int pad) { pattern_->toggleSolo(pad);      stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int,int){});
 
+    // M/S depuis StepGrid → pattern + sync Mixer
+    connect(stepGrid_, &StepGrid::trackMuteToggled, this, [this](int pad) {
+        pattern_->toggleMute(pad);
+        stepGrid_->update();
+        // pas besoin d'appeler updateMuteSoloButtons : le timer le fait
+    });
+    connect(stepGrid_, &StepGrid::trackSoloToggled, this, [this](int pad) {
+        pattern_->toggleSolo(pad);
+        stepGrid_->update();
+    });
+
+    // M/S depuis MixerPanel → pattern + sync StepGrid
+    connect(mixerPanel_, &MixerPanel::trackMuteToggled, this, [this](int pad) {
+        pattern_->toggleMute(pad);
+        stepGrid_->update();
+    });
+    connect(mixerPanel_, &MixerPanel::trackSoloToggled, this, [this](int pad) {
+        pattern_->toggleSolo(pad);
+        stepGrid_->update();
+    });
+
+    // ── SampleBrowser ─────────────────────────────────────────────
     connect(sampleBrowser_, &SampleBrowser::samplePreviewRequested,
             this, [this](const QString& path) {
                 audio::Player::instance().play(path.toStdString(), 1.0f);
@@ -201,13 +220,15 @@ void MainWindow::onClear() {
     stepGrid_->setCurrentStep(-1);
     stepGrid_->updatePattern(pattern_.get());
     transportBar_->setStep(0);
-    // Resync master volume
     audio::Player::instance().setMasterVolume(1.0f);
     mixerPanel_->resetAll();
 }
 
 void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
-void MainWindow::onLengthChanged(int len) { pattern_->setLength(len); stepGrid_->updatePattern(pattern_.get()); }
+void MainWindow::onLengthChanged(int len) {
+    pattern_->setLength(len);
+    stepGrid_->updatePattern(pattern_.get());
+}
 
 void MainWindow::onPadFileDropped(int padIdx, const QString& filePath) {
     const auto* cur = kitManager_->currentKit();

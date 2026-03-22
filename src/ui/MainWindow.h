@@ -11,9 +11,9 @@ namespace wako::ui {
 
 class PadGrid;
 class StepGrid;
+class MixerPanel;
 class TransportBar;
 class SampleBrowser;
-class MixerPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT

@@ -1,9 +1,12 @@
 #pragma once
 #include "VoicePool.h"
+#include "EffectChain.h"
 #include <portaudio.h>
 #include <string>
 #include <atomic>
-#include <algorithm> 
+#include <algorithm>
+#include <array>
+#include <memory>
 
 namespace wako::audio {
 
@@ -15,28 +18,33 @@ public:
     bool init(int sampleRate = 44100, int framesPerBuffer = 256);
     void shutdown();
 
-    // padIdx : index du pad pour le metering (-1 = preview)
     int  play(const std::string& filePath,
-              float volume  = 1.0f,
-              int   pitch   = 0,
-              bool  gate    = false,
-              int   padIdx  = -1);
+              float volume = 1.0f, int pitch = 0,
+              bool gate = false, int padIdx = -1);
 
     void stop(int voiceId);
     void stopAll();
-
     bool isRunning() const { return stream_ != nullptr; }
 
     // ── Master volume ─────────────────────────────────────────────
     void  setMasterVolume(float v) {
-        masterVolume_.store(std::clamp(v, 0.f, 1.f),
-                            std::memory_order_relaxed);
+        masterVolume_.store(std::clamp(v, 0.f, 1.f), std::memory_order_relaxed);
     }
     float masterVolume() const {
         return masterVolume_.load(std::memory_order_relaxed);
     }
 
-    // ── Metering (thread-safe, appelé depuis UI) ──────────────────
+    // ── Effect chains ─────────────────────────────────────────────
+    // Indices 0–8 : tracks, index 9 : master
+    static constexpr int MASTER_CHAIN = 9;
+
+    EffectChain& chain(int idx) {
+        return chains_[std::clamp(idx, 0, MASTER_CHAIN)];
+    }
+    EffectChain& trackChain(int pad)  { return chains_[std::clamp(pad, 0, 8)]; }
+    EffectChain& masterChain()        { return chains_[MASTER_CHAIN]; }
+
+    // ── Metering ──────────────────────────────────────────────────
     float trackPeak(int pad)  const { return voicePool_.trackPeak(pad); }
     float masterPeakL()       const { return voicePool_.masterPeakL(); }
     float masterPeakR()       const { return voicePool_.masterPeakR(); }
@@ -50,10 +58,13 @@ private:
                           const PaStreamCallbackTimeInfo*,
                           PaStreamCallbackFlags, void* userData);
 
-    PaStream*          stream_       = nullptr;
-    VoicePool          voicePool_;
-    int                sampleRate_   = 44100;
-    std::atomic<float> masterVolume_ {1.0f};
+    PaStream*  stream_      = nullptr;
+    VoicePool  voicePool_;
+    int        sampleRate_  = 44100;
+    std::atomic<float> masterVolume_{1.0f};
+
+    // 9 tracks + 1 master
+    std::array<EffectChain, MASTER_CHAIN + 1> chains_;
 };
 
 } // namespace wako::audio
