@@ -9,6 +9,19 @@ int VoicePool::play(const AudioBuffer* buffer, float volume,
                     bool gate, int padIdx) {
     if (!buffer || buffer->empty()) return -1;
 
+    // ── Retrigger : couper la voix précédente du même pad ─────────
+    // Comportement drum machine — le nouveau hit stoppe et redémarre.
+    // Fade-out 16 frames pour éviter le click.
+    if (padIdx >= 0) {
+        for (auto& v : voices_) {
+            if (v.padIdx == padIdx &&
+                v.position.load(std::memory_order_relaxed) >= 0)
+            {
+                v.stopping.store(true, std::memory_order_release);
+            }
+        }
+    }
+
     int slot = findFreeVoice();
     if (slot < 0) slot = stealOldestVoice();
 
@@ -45,7 +58,6 @@ void VoicePool::setMasterChain(EffectChain* chain) {
 }
 
 void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexcept {
-    // Limiter au buffer max pré-alloué
     unsigned long f = std::min(frames, (unsigned long)MAX_FRAMES_PA);
 
     // ── 1. Vider les buffers par canal ────────────────────────────
@@ -61,14 +73,14 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
         const AudioBuffer* buf = v.buffer;
         if (!buf) continue;
 
-        int  pad      = v.padIdx;
-        bool stopping = v.stopping.load(std::memory_order_relaxed);
+        int   pad     = v.padIdx;
+        bool  stopping= v.stopping.load(std::memory_order_relaxed);
         float env     = 1.0f;
         float fadeStep= stopping ? (1.0f / 16.0f) : 0.0f;
 
         float* dst = (pad >= 0 && pad < MAX_PADS_METER)
                      ? chanBufs_[pad].data()
-                     : masterBuf_.data();   // preview → master direct
+                     : masterBuf_.data();
 
         for (unsigned long i = 0; i < f; ++i) {
             if (pos >= buf->frameCount) { pos = -1; break; }
@@ -82,23 +94,20 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
         v.position.store(pos, std::memory_order_release);
     }
 
-    // ── 3. Effets par canal + mesure peak + somme dans master ─────
+    // ── 3. Effets par canal + peak + somme dans master ────────────
     float tmpTrack[MAX_PADS_METER] = {};
 
     for (int p = 0; p < MAX_PADS_METER; ++p) {
         float* cb = chanBufs_[p].data();
 
-        // Appliquer la chain d'effets du pad
         if (trackChains_[p])
             trackChains_[p]->process(cb, static_cast<int>(f));
 
-        // Peak par track
         for (unsigned long i = 0; i < f; ++i) {
             float pk = std::max(std::abs(cb[i*2]), std::abs(cb[i*2+1]));
             if (pk > tmpTrack[p]) tmpTrack[p] = pk;
         }
 
-        // Sommer dans masterBuf_
         for (unsigned long i = 0; i < f * 2; ++i)
             masterBuf_[i] += cb[i];
     }
@@ -107,7 +116,7 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
     if (masterChain_)
         masterChain_->process(masterBuf_.data(), static_cast<int>(f));
 
-    // ── 5. Master volume + peak master + copie dans output ───────
+    // ── 5. Master volume + peak master + copie output ─────────────
     float tmpL = 0.f, tmpR = 0.f;
     for (unsigned long i = 0; i < f; ++i) {
         masterBuf_[i*2]   *= masterVolume;
@@ -117,11 +126,10 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
     }
     std::memcpy(out, masterBuf_.data(), f * 2 * sizeof(float));
 
-    // Silence si frames > MAX_FRAMES_PA (ne devrait pas arriver)
     if (frames > f)
         std::memset(out + f * 2, 0, (frames - f) * 2 * sizeof(float));
 
-    // ── 6. Mettre à jour les peaks (max hold) ────────────────────
+    // ── 6. Peaks (max hold) ───────────────────────────────────────
     for (int p = 0; p < MAX_PADS_METER; ++p) {
         float cur = trackPeaks_[p].load(std::memory_order_relaxed);
         if (tmpTrack[p] > cur)
