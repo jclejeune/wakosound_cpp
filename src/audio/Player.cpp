@@ -1,7 +1,9 @@
 #include "Player.h"
 #include "AudioCache.h"
 #include "PitchCache.h"
+#include <sndfile.h>
 #include <iostream>
+#include <cstring>
 
 namespace wako::audio {
 
@@ -15,10 +17,8 @@ Player::~Player() { shutdown(); }
 bool Player::init(int sampleRate, int framesPerBuffer) {
     sampleRate_ = sampleRate;
 
-    // Initialiser toutes les chains avec le sample rate
     for (auto& c : chains_) c.setSampleRate(sampleRate);
 
-    // Brancher les chains sur le VoicePool
     for (int i = 0; i < MAX_PADS_METER; ++i)
         voicePool_.setTrackChain(i, &chains_[i]);
     voicePool_.setMasterChain(&chains_[MASTER_CHAIN]);
@@ -74,12 +74,71 @@ int Player::play(const std::string& filePath, float volume,
 void Player::stop(int voiceId)  { voicePool_.stop(voiceId); }
 void Player::stopAll()          { voicePool_.stopAll(); }
 
+// ── Recording ─────────────────────────────────────────────────────
+void Player::startRecording(int totalFrames) {
+    recordBuf_.assign(static_cast<size_t>(totalFrames * 2), 0.f);
+    recordTotal_ = totalFrames;
+    recordPos_.store(0, std::memory_order_release);
+    recording_.store(true, std::memory_order_release);
+}
+
+bool Player::stopRecording(const std::string& outputPath) {
+    recording_.store(false, std::memory_order_release);
+
+    int framesRecorded = recordPos_.load(std::memory_order_acquire);
+    if (framesRecorded <= 0) {
+        std::cerr << "[Player] stopRecording: rien à écrire\n";
+        return false;
+    }
+
+    SF_INFO info{};
+    info.samplerate = sampleRate_;
+    info.channels   = 2;
+    info.format     = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+
+    SNDFILE* sf = sf_open(outputPath.c_str(), SFM_WRITE, &info);
+    if (!sf) {
+        std::cerr << "[Player] stopRecording: " << sf_strerror(nullptr) << "\n";
+        return false;
+    }
+
+    sf_count_t written = sf_writef_float(sf, recordBuf_.data(),
+                                         static_cast<sf_count_t>(framesRecorded));
+    sf_close(sf);
+
+    std::cout << "[Player] WAV écrit : " << framesRecorded << " frames → "
+              << outputPath << "\n";
+
+    return written > 0;
+}
+
+// ── Callback PortAudio ────────────────────────────────────────────
 int Player::paCallback(const void*, void* output, unsigned long frames,
                        const PaStreamCallbackTimeInfo*,
                        PaStreamCallbackFlags, void* userData) {
     auto* self = static_cast<Player*>(userData);
     float mv   = self->masterVolume_.load(std::memory_order_relaxed);
     self->voicePool_.mix(static_cast<float*>(output), frames, mv);
+
+    // ── Enregistrement : copie de la sortie dans recordBuf_ ───────
+    if (self->recording_.load(std::memory_order_relaxed)) {
+        int pos  = self->recordPos_.load(std::memory_order_relaxed);
+        int remaining = self->recordTotal_ - pos;
+
+        if (remaining > 0) {
+            int toCopy = static_cast<int>(
+                std::min(static_cast<int>(frames), remaining));
+
+            std::memcpy(&self->recordBuf_[static_cast<size_t>(pos * 2)],
+                        output,
+                        static_cast<size_t>(toCopy) * 2 * sizeof(float));
+
+            self->recordPos_.fetch_add(toCopy, std::memory_order_relaxed);
+        }
+        // Quand le buffer est plein, recording_ reste true
+        // — c'est stopRecording() qui le passe à false.
+    }
+
     return paContinue;
 }
 

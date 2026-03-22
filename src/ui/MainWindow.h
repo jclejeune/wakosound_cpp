@@ -12,6 +12,7 @@ namespace wako::ui {
 class PadGrid;
 class StepGrid;
 class MixerPanel;
+class RenderPanel;
 class TransportBar;
 class SampleBrowser;
 
@@ -30,6 +31,8 @@ private slots:
     void onBpmChanged(int bpm);
     void onLengthChanged(int length);
     void onPadFileDropped(int padIdx, const QString& filePath);
+    void onRenderStart();
+    void onRenderStop();
 
 private:
     void onSequencerStep(const seq::TrackSteps& steps);
@@ -43,6 +46,7 @@ private:
     PadGrid*       padGrid_       = nullptr;
     StepGrid*      stepGrid_      = nullptr;
     MixerPanel*    mixerPanel_    = nullptr;
+    RenderPanel*   renderPanel_   = nullptr;
     TransportBar*  transportBar_  = nullptr;
     SampleBrowser* sampleBrowser_ = nullptr;
     QTabWidget*    tabs_          = nullptr;

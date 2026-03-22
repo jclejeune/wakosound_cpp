@@ -44,6 +44,7 @@ set(SOURCES
     src/ui/SampleBrowser.cpp
     src/ui/MixerPanel.cpp
     src/ui/EffectWindow.cpp
+    src/ui/RenderPanel.cpp
 )
 
 add_executable(WakoSound ${SOURCES})

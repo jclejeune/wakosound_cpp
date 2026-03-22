@@ -2,6 +2,7 @@
 #include "PadGrid.h"
 #include "StepGrid.h"
 #include "MixerPanel.h"
+#include "RenderPanel.h"
 #include "TransportBar.h"
 #include "SampleBrowser.h"
 #include "SvgIcons.h"
@@ -27,6 +28,11 @@ static constexpr const char* MIXER_SVG = R"(
     4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/>
 </svg>)";
 
+static constexpr const char* RENDER_SVG = R"(
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <path fill="%%COLOR%%" d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+</svg>)";
+
 namespace wako::ui {
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -42,7 +48,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
 
-    // ── Layout racine ─────────────────────────────────────────────
     auto* central    = new QWidget(this);
     setCentralWidget(central);
     auto* rootLayout = new QVBoxLayout(central);
@@ -53,7 +58,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     rootLayout->addWidget(transportBar_);
     refreshKitCombo();
 
-    // ── Splitter : sidebar | contenu ─────────────────────────────
     splitter_ = new QSplitter(Qt::Horizontal, central);
     splitter_->setHandleWidth(3);
     splitter_->setStyleSheet(
@@ -65,10 +69,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     sampleBrowser_->setMaximumWidth(SIDEBAR_MAX);
     splitter_->addWidget(sampleBrowser_);
 
-    // ── Tabs ──────────────────────────────────────────────────────
-    padGrid_    = new PadGrid(splitter_);
-    stepGrid_   = new StepGrid(pattern_, splitter_);
-    mixerPanel_ = new MixerPanel(pattern_, splitter_);
+    padGrid_     = new PadGrid(splitter_);
+    stepGrid_    = new StepGrid(pattern_, splitter_);
+    mixerPanel_  = new MixerPanel(pattern_, splitter_);
+    renderPanel_ = new RenderPanel(pattern_, kitManager_, splitter_);
 
     stepGrid_->setKit(kitManager_->currentKit());
     mixerPanel_->setKit(kitManager_->currentKit());
@@ -85,9 +89,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     tabs_ = new QTabWidget(splitter_);
     tabs_->setStyleSheet("QTabBar::tab { padding: 6px 14px; font-size: 12px; }");
-    tabs_->addTab(samplerTab,  icons::icon(icons::GRID,       14), "Sampler");
-    tabs_->addTab(seqTab,      icons::icon(icons::MUSIC_NOTE, 14), "Séquenceur");
-    tabs_->addTab(mixerPanel_, icons::icon(MIXER_SVG,         14), "Mixage");
+    tabs_->addTab(samplerTab,   icons::icon(icons::GRID,       14), "Sampler");
+    tabs_->addTab(seqTab,       icons::icon(icons::MUSIC_NOTE, 14), "Séquenceur");
+    tabs_->addTab(mixerPanel_,  icons::icon(MIXER_SVG,         14), "Mixage");
+    tabs_->addTab(renderPanel_, icons::icon(RENDER_SVG,        14), "Render");
     splitter_->addWidget(tabs_);
 
     splitter_->setCollapsible(0, false);
@@ -98,7 +103,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     padGrid_->refresh(kitManager_->currentKit());
 
-    // ── Connexions transport ──────────────────────────────────────
+    // ── Connexions ────────────────────────────────────────────────
     connect(transportBar_, &TransportBar::kitChanged, this, [this](int idx) {
         kitManager_->switchTo(idx);
         audio::AudioCache::instance().preload(kitManager_->currentKitFilePaths());
@@ -112,8 +117,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (!kit) return;
         const auto* pad = kit->pad(idx);
         if (pad && pad->enabled && !pad->filePath.empty())
-            audio::Player::instance().play(pad->filePath, pad->volume,
-                                           0, false, idx);
+            audio::Player::instance().play(pad->filePath, pad->volume, 0, false, idx);
     });
 
     connect(transportBar_, &TransportBar::playStopClicked, this, &MainWindow::onPlayStop);
@@ -140,7 +144,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         audio::Player::instance().setMasterVolume(pattern_->masterVolume);
     });
 
-    // ── StepGrid ──────────────────────────────────────────────────
     connect(stepGrid_, &StepGrid::stepToggled, this, [this](int pad, int step) {
         pattern_->toggle(pad, step);
         stepGrid_->updatePattern(pattern_.get());
@@ -150,28 +153,19 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(stepGrid_, &StepGrid::trackGateToggled,  this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int,int){});
 
-    // M/S depuis StepGrid → pattern + sync Mixer
     connect(stepGrid_, &StepGrid::trackMuteToggled, this, [this](int pad) {
-        pattern_->toggleMute(pad);
-        stepGrid_->update();
-        // pas besoin d'appeler updateMuteSoloButtons : le timer le fait
+        pattern_->toggleMute(pad); stepGrid_->update();
     });
     connect(stepGrid_, &StepGrid::trackSoloToggled, this, [this](int pad) {
-        pattern_->toggleSolo(pad);
-        stepGrid_->update();
+        pattern_->toggleSolo(pad); stepGrid_->update();
     });
-
-    // M/S depuis MixerPanel → pattern + sync StepGrid
     connect(mixerPanel_, &MixerPanel::trackMuteToggled, this, [this](int pad) {
-        pattern_->toggleMute(pad);
-        stepGrid_->update();
+        pattern_->toggleMute(pad); stepGrid_->update();
     });
     connect(mixerPanel_, &MixerPanel::trackSoloToggled, this, [this](int pad) {
-        pattern_->toggleSolo(pad);
-        stepGrid_->update();
+        pattern_->toggleSolo(pad); stepGrid_->update();
     });
 
-    // ── SampleBrowser ─────────────────────────────────────────────
     connect(sampleBrowser_, &SampleBrowser::samplePreviewRequested,
             this, [this](const QString& path) {
                 audio::Player::instance().play(path.toStdString(), 1.0f);
@@ -179,6 +173,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(padGrid_, &PadGrid::padFileDropped,
             this, &MainWindow::onPadFileDropped);
+
+    // ── Render ────────────────────────────────────────────────────
+    connect(renderPanel_, &RenderPanel::sequencerStartRequested,
+            this, &MainWindow::onRenderStart);
+    connect(renderPanel_, &RenderPanel::sequencerStopRequested,
+            this, &MainWindow::onRenderStop);
 }
 
 MainWindow::~MainWindow() {
@@ -210,6 +210,22 @@ void MainWindow::stopSequencer() {
     transportBar_->setPlaying(false);
     transportBar_->setStep(0);
     stepGrid_->setCurrentStep(-1);
+}
+
+void MainWindow::onRenderStart() {
+    // Stopper si déjà en lecture
+    if (engine_->isRunning())
+        engine_->stop();
+
+    // Remettre à zéro et lancer
+    pattern_->trackSteps.fill(0);
+    engine_->start(pattern_, kitManager_,
+        [this](const seq::TrackSteps& steps) { onSequencerStep(steps); });
+    transportBar_->setPlaying(true);
+}
+
+void MainWindow::onRenderStop() {
+    stopSequencer();
 }
 
 void MainWindow::onClear() {
