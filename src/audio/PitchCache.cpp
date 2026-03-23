@@ -1,5 +1,6 @@
 #include "PitchCache.h"
-#include <rubberband/RubberBandStretcher.h>
+#include <cstring>                           // requis par signalsmith-linear/fft.h
+#include <signalsmith-stretch.h>
 #include <cmath>
 #include <iostream>
 
@@ -11,7 +12,6 @@ PitchCache& PitchCache::instance() {
 }
 
 const AudioBuffer* PitchCache::get(const std::string& filePath, int semitones) {
-    // pitch 0 → AudioCache direct, pas de traitement
     if (semitones == 0)
         return AudioCache::instance().get(filePath);
 
@@ -24,15 +24,12 @@ const AudioBuffer* PitchCache::get(const std::string& filePath, int semitones) {
             return &it->second;
     }
 
-    // Charger le buffer original
     const AudioBuffer* original = AudioCache::instance().get(filePath);
     if (!original) return nullptr;
 
-    // Traiter hors lock (RubberBand peut être lent sur gros fichiers)
     AudioBuffer shifted = process(*original, semitones);
 
     std::lock_guard lock(mutex_);
-    // Double-check
     auto it = cache_.find(key);
     if (it != cache_.end())
         return &it->second;
@@ -42,57 +39,68 @@ const AudioBuffer* PitchCache::get(const std::string& filePath, int semitones) {
 }
 
 // ──────────────────────────────────────────────────────────────────
-// process — RubberBand offline, durée préservée
+// process — signalsmith-stretch offline
+// API : presetDefault → setTransposeFactor → process(in, n, out, n)
 // ──────────────────────────────────────────────────────────────────
 AudioBuffer PitchCache::process(const AudioBuffer& input, int semitones) {
     double pitchScale = std::pow(2.0, semitones / 12.0);
 
-    using namespace RubberBand;
-    RubberBandStretcher stretcher(
-        input.sampleRate,
-        2,  // stereo
-        RubberBandStretcher::OptionProcessOffline |
-        RubberBandStretcher::OptionPitchHighQuality
-    );
+    const int channels   = 2;
+    const int sampleRate = input.sampleRate;
+    const int frames     = static_cast<int>(input.frameCount);
 
-    stretcher.setPitchScale(pitchScale);
-    stretcher.setTimeRatio(1.0);  // durée préservée
-
-    // Désentrelacer L/R pour RubberBand
-    auto frames = static_cast<int>(input.frameCount);
+    // Désentrelacer L/R
     std::vector<float> left(frames), right(frames);
     for (int i = 0; i < frames; ++i) {
         left[i]  = input.samples[i * 2];
         right[i] = input.samples[i * 2 + 1];
     }
 
-    const float* inChannels[2] = {left.data(), right.data()};
+    signalsmith::stretch::SignalsmithStretch<float> stretcher;
+    stretcher.presetDefault(channels, static_cast<float>(sampleRate));
+    stretcher.setTransposeFactor(static_cast<float>(pitchScale));
 
-    // Phase d'étude (offline)
-    stretcher.study(inChannels, frames, true);
+    constexpr int BLOCK = 1024;
 
-    // Phase de traitement
-    stretcher.process(inChannels, frames, true);
+    std::vector<float> outL, outR;
+    outL.reserve(frames);
+    outR.reserve(frames);
 
-    // Récupérer la sortie
-    int available = stretcher.available();
-    if (available <= 0) {
-        std::cerr << "[PitchCache] RubberBand: no output available\n";
-        return input;  // fallback : retourner l'original
+    std::vector<float> tmpL(BLOCK), tmpR(BLOCK);
+    float* outPtrs[2] = { tmpL.data(), tmpR.data() };
+
+    int pos = 0;
+    while (pos < frames) {
+        int toProcess = std::min(BLOCK, frames - pos);
+
+        const float* inBlock[2] = {
+            left.data()  + pos,
+            right.data() + pos
+        };
+
+        // 4 arguments : inputs, inputSamples, outputs, outputSamples
+        stretcher.process(inBlock, toProcess, outPtrs, toProcess);
+
+        for (int i = 0; i < toProcess; ++i) {
+            outL.push_back(tmpL[i]);
+            outR.push_back(tmpR[i]);
+        }
+        pos += toProcess;
     }
 
-    std::vector<float> outL(available), outR(available);
-    float* outChannels[2] = {outL.data(), outR.data()};
-    stretcher.retrieve(outChannels, available);
+    int outFrames = static_cast<int>(outL.size());
+    if (outFrames == 0) {
+        std::cerr << "[PitchCache] signalsmith: no output\n";
+        return input;
+    }
 
-    // Réentrelacer
     AudioBuffer out;
-    out.sampleRate = input.sampleRate;
-    out.channels   = 2;
-    out.frameCount = available;
-    out.samples.resize(static_cast<size_t>(available * 2));
+    out.sampleRate = sampleRate;
+    out.channels   = channels;
+    out.frameCount = outFrames;
+    out.samples.resize(static_cast<size_t>(outFrames * 2));
 
-    for (int i = 0; i < available; ++i) {
+    for (int i = 0; i < outFrames; ++i) {
         out.samples[i * 2]     = outL[i];
         out.samples[i * 2 + 1] = outR[i];
     }

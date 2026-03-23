@@ -8,9 +8,19 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(PORTAUDIO  REQUIRED portaudio-2.0)
-pkg_check_modules(SNDFILE    REQUIRED sndfile)
-pkg_check_modules(RUBBERBAND REQUIRED rubberband)
+pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
+pkg_check_modules(SNDFILE   REQUIRED sndfile)
+
+# signalsmith-stretch — header-only, MIT licence
+# Installation : git submodule add https://github.com/Signalsmith-Audio/stretch.git vendor/signalsmith-stretch
+set(SIGNALSMITH_STRETCH_DIR "${CMAKE_SOURCE_DIR}/vendor/signalsmith-stretch")
+if(NOT EXISTS "${SIGNALSMITH_STRETCH_DIR}/signalsmith-stretch.h")
+    message(FATAL_ERROR
+        "signalsmith-stretch introuvable.\n"
+        "Lancer : git submodule add "
+        "https://github.com/Signalsmith-Audio/stretch.git "
+        "vendor/signalsmith-stretch")
+endif()
 
 set(SOURCES
     src/main.cpp
@@ -53,7 +63,11 @@ target_include_directories(WakoSound PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${PORTAUDIO_INCLUDE_DIRS}
     ${SNDFILE_INCLUDE_DIRS}
-    ${RUBBERBAND_INCLUDE_DIRS}
+)
+
+# SYSTEM = warnings supprimés pour cette lib externe
+target_include_directories(WakoSound SYSTEM PRIVATE
+    ${SIGNALSMITH_STRETCH_DIR}
 )
 
 target_link_libraries(WakoSound PRIVATE
@@ -61,14 +75,12 @@ target_link_libraries(WakoSound PRIVATE
     Qt6::Svg
     ${PORTAUDIO_LIBRARIES}
     ${SNDFILE_LIBRARIES}
-    ${RUBBERBAND_LIBRARIES}
 )
 
 target_compile_options(WakoSound PRIVATE
     -Wall -Wextra -O2
     ${PORTAUDIO_CFLAGS_OTHER}
     ${SNDFILE_CFLAGS_OTHER}
-    ${RUBBERBAND_CFLAGS_OTHER}
 )
 
 configure_file(
