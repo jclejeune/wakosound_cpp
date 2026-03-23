@@ -2,6 +2,7 @@
 #include "../audio/EffectChain.h"
 #include <QWidget>
 #include <QVBoxLayout>
+#include <QCloseEvent>
 
 namespace wako::ui {
 
@@ -13,6 +14,16 @@ public:
                           QWidget* parent = nullptr);
 
     void setChannelName(const QString& name);
+
+signals:
+    // Émis quand l'utilisateur ferme la fenêtre via la croix
+    void closed();
+
+protected:
+    void closeEvent(QCloseEvent* event) override {
+        emit closed();
+        event->accept();   // cache (WA_DeleteOnClose=false), ne détruit pas
+    }
 
 private:
     void buildEQ    (QVBoxLayout* root);
