@@ -39,6 +39,11 @@ private:
     void stopSequencer();
     void refreshKitCombo();
 
+    // Navigation pas-à-pas (J/K)
+    void stepForward();
+    void stepBackward();
+    void playCurrentStep();
+
     std::shared_ptr<model::KitManager> kitManager_;
     std::shared_ptr<seq::Pattern>      pattern_;
     std::unique_ptr<seq::Engine>       engine_;

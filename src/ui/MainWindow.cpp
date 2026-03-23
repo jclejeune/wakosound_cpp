@@ -15,10 +15,17 @@
 #include <QMessageBox>
 #include <iostream>
 
-static const int NUMPAD_KEYS[] = {
-    Qt::Key_7, Qt::Key_8, Qt::Key_9,
-    Qt::Key_4, Qt::Key_5, Qt::Key_6,
-    Qt::Key_1, Qt::Key_2, Qt::Key_3
+// ──────────────────────────────────────────────────────────────────
+// Mapping clavier AZERTY → pads
+//
+//  A Z E      pad 0 1 2   (ligne haute)
+//  Q S D      pad 3 4 5   (ligne milieu)
+//  W X C      pad 6 7 8   (ligne basse)
+// ──────────────────────────────────────────────────────────────────
+static const Qt::Key PAD_KEYS[] = {
+    Qt::Key_A, Qt::Key_Z, Qt::Key_E,
+    Qt::Key_Q, Qt::Key_S, Qt::Key_D,
+    Qt::Key_W, Qt::Key_X, Qt::Key_C
 };
 
 static constexpr const char* MIXER_SVG = R"(
@@ -129,29 +136,35 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(transportBar_, &TransportBar::saveClicked, this, [this] {
         QString path = QFileDialog::getSaveFileName(
             this, "Sauvegarder le pattern", "pattern.json", "Pattern JSON (*.json)");
-        if (path.isEmpty()) return;
+        if (path.isEmpty()) { setFocus(); return; }
         if (!pattern_->saveToFile(path.toStdString()))
             QMessageBox::warning(this, "Erreur", "Impossible de sauvegarder.");
+        setFocus();
     });
 
     connect(transportBar_, &TransportBar::loadClicked, this, [this] {
         QString path = QFileDialog::getOpenFileName(
             this, "Charger un pattern", "", "Pattern JSON (*.json)");
-        if (path.isEmpty()) return;
+        if (path.isEmpty()) { setFocus(); return; }
         auto loaded = seq::Pattern::loadFromFile(path.toStdString());
-        if (!loaded) { QMessageBox::warning(this, "Erreur", "Fichier invalide."); return; }
+        if (!loaded) {
+            QMessageBox::warning(this, "Erreur", "Fichier invalide.");
+            setFocus();
+            return;
+        }
         *pattern_ = *loaded;
         stepGrid_->updatePattern(pattern_.get());
         audio::Player::instance().setMasterVolume(pattern_->masterVolume);
+        setFocus();
     });
 
     connect(stepGrid_, &StepGrid::stepToggled, this, [this](int pad, int step) {
         pattern_->toggle(pad, step);
         stepGrid_->updatePattern(pattern_.get());
     });
-    connect(stepGrid_, &StepGrid::stepGateToggled,   this, [this](int,int)               { stepGrid_->update(); });
-    connect(stepGrid_, &StepGrid::stepDataChanged,   this, [this](int,int,seq::StepData) { stepGrid_->update(); });
-    connect(stepGrid_, &StepGrid::trackGateToggled,  this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::stepGateToggled,    this, [this](int,int)               { stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::stepDataChanged,    this, [this](int,int,seq::StepData) { stepGrid_->update(); });
+    connect(stepGrid_, &StepGrid::trackGateToggled,   this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int,int){});
 
     connect(stepGrid_, &StepGrid::trackMuteToggled, this, [this](int pad) {
@@ -172,14 +185,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 audio::Player::instance().play(path.toStdString(), 1.0f);
             });
 
-    connect(padGrid_, &PadGrid::padFileDropped,
-            this, &MainWindow::onPadFileDropped);
+    connect(padGrid_, &PadGrid::padFileDropped, this, &MainWindow::onPadFileDropped);
 
-    // ── Render ────────────────────────────────────────────────────
-    connect(renderPanel_, &RenderPanel::sequencerStartRequested,
-            this, &MainWindow::onRenderStart);
-    connect(renderPanel_, &RenderPanel::sequencerStopRequested,
-            this, &MainWindow::onRenderStop);
+    connect(renderPanel_, &RenderPanel::sequencerStartRequested, this, &MainWindow::onRenderStart);
+    connect(renderPanel_, &RenderPanel::sequencerStopRequested,  this, &MainWindow::onRenderStop);
 }
 
 MainWindow::~MainWindow() {
@@ -214,11 +223,7 @@ void MainWindow::stopSequencer() {
 }
 
 void MainWindow::onRenderStart() {
-    // Stopper si déjà en lecture
-    if (engine_->isRunning())
-        engine_->stop();
-
-    // Remettre à zéro et lancer
+    if (engine_->isRunning()) engine_->stop();
     pattern_->trackSteps.fill(0);
     engine_->start(pattern_, kitManager_,
         [this](const seq::TrackSteps& steps) { onSequencerStep(steps); });
@@ -230,15 +235,18 @@ void MainWindow::onRenderStop() {
 }
 
 void MainWindow::onClear() {
-    if (engine_->isRunning()) { engine_->stop(); transportBar_->setPlaying(false); }
+    if (engine_->isRunning()) {
+        engine_->stop();
+        transportBar_->setPlaying(false);
+    }
     pattern_->clearAll();
     pattern_->setLength(16);
     pattern_->trackSteps.fill(0);
     stepGrid_->setCurrentStep(-1);
     stepGrid_->updatePattern(pattern_.get());
     transportBar_->setStep(0);
-    audio::Player::instance().setMasterVolume(1.0f);
     mixerPanel_->resetAll();
+    setFocus();
 }
 
 void MainWindow::onBpmChanged(int bpm)    { pattern_->setBpm(bpm); }
@@ -280,14 +288,88 @@ void MainWindow::onSequencerStep(const seq::TrackSteps& steps) {
     }, Qt::QueuedConnection);
 }
 
+// ──────────────────────────────────────────────────────────────────
+// Navigation pas-à-pas (J/K)
+// ──────────────────────────────────────────────────────────────────
+void MainWindow::playCurrentStep() {
+    const auto* kit = kitManager_->currentKit();
+    if (!kit) return;
+    auto& player = audio::Player::instance();
+
+    for (int p = 0; p < seq::MAX_PADS; ++p) {
+        if (!pattern_->shouldPlay(p)) continue;
+        int step = pattern_->trackSteps[p];
+        const seq::StepData& sd = pattern_->grid[p][step];
+        if (!sd.active) continue;
+        const model::Pad* pad = kit->pad(p);
+        if (!pad || !pad->enabled || pad->filePath.empty()) continue;
+        float vol = pad->volume * sd.volume * pattern_->trackVolumes[p];
+        player.play(pad->filePath, vol, sd.pitch, sd.gate || pattern_->trackGate[p], p);
+        padGrid_->flashPad(p);
+    }
+
+    stepGrid_->setCurrentSteps(pattern_->trackSteps);
+    transportBar_->setStep(pattern_->trackSteps[0]);
+}
+
+void MainWindow::stepForward() {
+    if (engine_->isRunning()) return;
+    // Avancer chaque track d'un step
+    for (int p = 0; p < seq::MAX_PADS; ++p)
+        pattern_->trackSteps[p] = (pattern_->trackSteps[p] + 1) % pattern_->trackLengths[p];
+    playCurrentStep();
+}
+
+void MainWindow::stepBackward() {
+    if (engine_->isRunning()) return;
+    // Reculer chaque track d'un step
+    for (int p = 0; p < seq::MAX_PADS; ++p) {
+        pattern_->trackSteps[p] =
+            (pattern_->trackSteps[p] - 1 + pattern_->trackLengths[p])
+            % pattern_->trackLengths[p];
+    }
+    playCurrentStep();
+}
+
+// ──────────────────────────────────────────────────────────────────
+// keyPressEvent
+// ──────────────────────────────────────────────────────────────────
 void MainWindow::keyPressEvent(QKeyEvent* event) {
+    // Ignorer les répétitions auto (touche maintenue)
+    if (event->isAutoRepeat()) {
+        QMainWindow::keyPressEvent(event);
+        return;
+    }
+
+    const Qt::Key key = static_cast<Qt::Key>(event->key());
+
+    // ── Space / L → Play/Stop ─────────────────────────────────────
+    if (key == Qt::Key_Space || key == Qt::Key_L) {
+        onPlayStop();
+        return;
+    }
+
+    // ── K → step forward ─────────────────────────────────────────
+    if (key == Qt::Key_K) {
+        stepForward();
+        return;
+    }
+
+    // ── J → step backward ────────────────────────────────────────
+    if (key == Qt::Key_J) {
+        stepBackward();
+        return;
+    }
+
+    // ── A Z E / Q S D / W X C → pads ─────────────────────────────
     for (int i = 0; i < 9; ++i) {
-        if (event->key() == NUMPAD_KEYS[i]) {
+        if (key == PAD_KEYS[i]) {
             emit padGrid_->padTriggered(i);
             padGrid_->flashPad(i);
             return;
         }
     }
+
     QMainWindow::keyPressEvent(event);
 }
 

@@ -4,6 +4,7 @@
 #include <QWidget>
 #include <QTimer>
 #include <QPushButton>
+#include <QSlider>
 #include <memory>
 #include <array>
 
@@ -60,11 +61,17 @@ private:
     std::array<QPushButton*, seq::MAX_PADS> muteButtons_{};
     std::array<QPushButton*, seq::MAX_PADS> soloButtons_{};
     std::array<QPushButton*, seq::MAX_PADS> fxButtons_{};
-    std::array<EffectWindow*, seq::MAX_PADS + 1> fxWindows_{};  // +1 master
 
-    VuMeter* masterVuL_ = nullptr;
-    VuMeter* masterVuR_ = nullptr;
-    QPushButton* masterFxBtn_ = nullptr;
+    // Sliders volume stockés explicitement — pas de findChildren
+    std::array<QSlider*, seq::MAX_PADS> trackSliders_{};
+    QSlider* masterSlider_ = nullptr;
+
+    // +1 pour le master
+    std::array<EffectWindow*, seq::MAX_PADS + 1> fxWindows_{};
+
+    VuMeter*     masterVuL_    = nullptr;
+    VuMeter*     masterVuR_    = nullptr;
+    QPushButton* masterFxBtn_  = nullptr;
 
     QTimer* timer_ = nullptr;
 

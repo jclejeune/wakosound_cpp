@@ -176,7 +176,7 @@ void EffectWindow::buildEQ(QVBoxLayout* root) {
     });
 }
 
-// ── Saturateur ────────────────────────────────────────────────────
+// ── Distortion────────────────────────────────────────────────────
 void EffectWindow::buildSat(QVBoxLayout* root) {
     auto& sat = chain_.sat();
     auto* container = new QWidget;
@@ -191,7 +191,7 @@ void EffectWindow::buildSat(QVBoxLayout* root) {
     using Mode = audio::Saturator::Mode;
 
     const Mode  modeValues[3] = { Mode::Tube, Mode::Transistor, Mode::Fuzz };
-    const char* modeLabels[3] = { "Tube", "303/808", "Fuzz" };
+    const char* modeLabels[3] = { "Tube", "Transistor", "Fuzz" };
     const char* modeTips[3]   = {
         "Overdrive doux atan asymétrique",
         "Hard clip transistor, style TB-303 / Roland 808",
