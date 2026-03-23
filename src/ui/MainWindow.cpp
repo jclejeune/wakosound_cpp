@@ -110,6 +110,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         padGrid_->refresh(kitManager_->currentKit());
         stepGrid_->setKit(kitManager_->currentKit());
         mixerPanel_->setKit(kitManager_->currentKit());
+        setFocus();
     });
 
     connect(padGrid_, &PadGrid::padTriggered, this, [this](int idx) {
