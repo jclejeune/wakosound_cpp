@@ -32,7 +32,7 @@ struct Voice {
 
 class VoicePool {
 public:
-    static constexpr int MAX_VOICES = 16;
+    static constexpr int MAX_VOICES = 256;
 
     void setSampleRate(int sr) { sampleRate_ = sr; }
 
@@ -61,7 +61,7 @@ public:
 private:
     std::array<Voice, MAX_VOICES> voices_{};
 
-    int nextId_ = 0;
+    int nextId_     = 0;
     int sampleRate_ = 44100;
 
     std::array<EffectChain*, MAX_PADS_METER> trackChains_{};
