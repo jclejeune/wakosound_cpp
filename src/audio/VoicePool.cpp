@@ -62,13 +62,12 @@ void VoicePool::setMasterChain(EffectChain* chain) {
 void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexcept {
     unsigned long f = std::min(frames, (unsigned long)MAX_FRAMES_PA);
 
-    std::memset(out, 0, f * 2 * sizeof(float));
+    // ── 1. Vider les buffers par track et master ──────────────────
+    for (auto& cb : chanBufs_)
+        std::memset(cb.data(), 0, f * 2 * sizeof(float));
+    std::memset(masterBuf_.data(), 0, f * 2 * sizeof(float));
 
-    float peakL = 0.0f;
-    float peakR = 0.0f;
-
-    float tmpTrack[MAX_PADS_METER] = {};
-
+    // ── 2. Chaque voix → son buffer de track ─────────────────────
     for (auto& v : voices_) {
         if (!v.active || !v.buffer) continue;
 
@@ -77,6 +76,12 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
 
         float pos   = v.position;
         float pitch = v.pitch;
+        int   pad   = v.padIdx;
+
+        // Destination : buffer du pad ou master si pad invalide
+        float* dst = (pad >= 0 && pad < MAX_PADS_METER)
+                     ? chanBufs_[pad].data()
+                     : masterBuf_.data();
 
         for (unsigned long i = 0; i < f; ++i) {
             int idx = (int)pos;
@@ -96,32 +101,13 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
             float outL = l0 + (l1 - l0) * frac;
             float outR = r0 + (r1 - r0) * frac;
 
-            // enveloppe
             v.env += v.envStep;
-            if (v.env <= 0.0f) {
-                v.active = false;
-                break;
-            }
-            if (v.env > 1.0f) v.env = 1.0f;
+            if (v.env <= 0.0f) { v.active = false; break; }
+            if (v.env > 1.0f)   v.env = 1.0f;
 
             float gain = v.volume * v.env;
-
-            float finalL = outL * gain;
-            float finalR = outR * gain;
-
-            out[i * 2]     += finalL;
-            out[i * 2 + 1] += finalR;
-
-            // peaks track
-            if (v.padIdx >= 0 && v.padIdx < MAX_PADS_METER) {
-                float pk = std::max(std::abs(finalL), std::abs(finalR));
-                if (pk > tmpTrack[v.padIdx])
-                    tmpTrack[v.padIdx] = pk;
-            }
-
-            // peaks master
-            if (std::abs(finalL) > peakL) peakL = std::abs(finalL);
-            if (std::abs(finalR) > peakR) peakR = std::abs(finalR);
+            dst[i * 2]     += outL * gain;
+            dst[i * 2 + 1] += outR * gain;
 
             pos += pitch;
         }
@@ -129,21 +115,50 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
         v.position = pos;
     }
 
-    // effets master
+    // ── 3. Effets par track + peak + somme dans master ────────────
+    float tmpTrack[MAX_PADS_METER] = {};
+
+    for (int p = 0; p < MAX_PADS_METER; ++p) {
+        float* cb = chanBufs_[p].data();
+
+        // Appliquer la chaîne d'effets du track
+        if (trackChains_[p])
+            trackChains_[p]->process(cb, static_cast<int>(f));
+
+        // Peak par track
+        for (unsigned long i = 0; i < f; ++i) {
+            float pk = std::max(std::abs(cb[i*2]), std::abs(cb[i*2+1]));
+            if (pk > tmpTrack[p]) tmpTrack[p] = pk;
+        }
+
+        // Sommer dans le master
+        for (unsigned long i = 0; i < f * 2; ++i)
+            masterBuf_[i] += cb[i];
+    }
+
+    // ── 4. Effets master ──────────────────────────────────────────
     if (masterChain_)
-        masterChain_->process(out, (int)f);
+        masterChain_->process(masterBuf_.data(), static_cast<int>(f));
 
-    // volume master
-    for (unsigned long i = 0; i < f * 2; ++i)
-        out[i] *= masterVolume;
+    // ── 5. Master volume + peak master + copie output ─────────────
+    float peakL = 0.f, peakR = 0.f;
+    for (unsigned long i = 0; i < f; ++i) {
+        masterBuf_[i*2]   *= masterVolume;
+        masterBuf_[i*2+1] *= masterVolume;
+        if (std::abs(masterBuf_[i*2])   > peakL) peakL = std::abs(masterBuf_[i*2]);
+        if (std::abs(masterBuf_[i*2+1]) > peakR) peakR = std::abs(masterBuf_[i*2+1]);
+    }
+    std::memcpy(out, masterBuf_.data(), f * 2 * sizeof(float));
 
-    // store peaks
+    if (frames > f)
+        std::memset(out + f * 2, 0, (frames - f) * 2 * sizeof(float));
+
+    // ── 6. Peaks (max hold) ───────────────────────────────────────
     for (int p = 0; p < MAX_PADS_METER; ++p) {
         float cur = trackPeaks_[p].load(std::memory_order_relaxed);
         if (tmpTrack[p] > cur)
             trackPeaks_[p].store(tmpTrack[p], std::memory_order_relaxed);
     }
-
     peakL_.store(peakL, std::memory_order_relaxed);
     peakR_.store(peakR, std::memory_order_relaxed);
 }
@@ -154,7 +169,6 @@ void VoicePool::decayPeaks(float factor) {
         float v = p.load(std::memory_order_relaxed) * factor;
         p.store(v, std::memory_order_relaxed);
     }
-
     peakL_.store(peakL_.load(std::memory_order_relaxed) * factor, std::memory_order_relaxed);
     peakR_.store(peakR_.load(std::memory_order_relaxed) * factor, std::memory_order_relaxed);
 }
@@ -168,13 +182,18 @@ int VoicePool::findFreeVoice() {
 }
 
 int VoicePool::stealVoice() {
-    int best = 0;
-    float lowestEnergy = 1e9f;
+    int   best        = 0;
+    float maxProgress = -1.f;
 
     for (int i = 0; i < MAX_VOICES; ++i) {
-        float energy = voices_[i].volume * voices_[i].env;
-        if (energy < lowestEnergy) {
-            lowestEnergy = energy;
+        const Voice& v = voices_[i];
+        if (!v.buffer || v.buffer->frameCount == 0) return i;
+
+        float progress = (v.position * v.pitch) /
+                         static_cast<float>(v.buffer->frameCount);
+
+        if (progress > maxProgress) {
+            maxProgress = progress;
             best = i;
         }
     }

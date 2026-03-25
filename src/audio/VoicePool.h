@@ -52,17 +52,19 @@ public:
         if (pad < 0 || pad >= MAX_PADS_METER) return 0.f;
         return trackPeaks_[pad].load(std::memory_order_relaxed);
     }
-
     float masterPeakL() const { return peakL_.load(std::memory_order_relaxed); }
     float masterPeakR() const { return peakR_.load(std::memory_order_relaxed); }
-
-    void decayPeaks(float factor = 0.85f);
+    void  decayPeaks(float factor = 0.85f);
 
 private:
     std::array<Voice, MAX_VOICES> voices_{};
 
     int nextId_     = 0;
     int sampleRate_ = 44100;
+
+    // Buffers intermédiaires par track — zéro alloc en RT
+    std::array<std::array<float, MAX_FRAMES_PA * 2>, MAX_PADS_METER> chanBufs_{};
+    std::array<float, MAX_FRAMES_PA * 2> masterBuf_{};
 
     std::array<EffectChain*, MAX_PADS_METER> trackChains_{};
     EffectChain* masterChain_ = nullptr;
