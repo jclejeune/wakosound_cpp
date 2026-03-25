@@ -1,53 +1,54 @@
 #include "VoicePool.h"
-#include <cstring>
-#include <cmath>
-#include <algorithm>
 
 namespace wako::audio {
 
+// ─────────────────────────────
 int VoicePool::play(const AudioBuffer* buffer, float volume,
-                    bool gate, int padIdx) {
+                    bool /*gate*/, int padIdx, int pitchSemitone) {
     if (!buffer || buffer->empty()) return -1;
 
-    // ── Retrigger : couper la voix précédente du même pad ─────────
-    // Comportement drum machine — le nouveau hit stoppe et redémarre.
-    // Fade-out 16 frames pour éviter le click.
-    if (padIdx >= 0) {
-        for (auto& v : voices_) {
-            if (v.padIdx == padIdx &&
-                v.position.load(std::memory_order_relaxed) >= 0)
-            {
-                v.stopping.store(true, std::memory_order_release);
-            }
-        }
-    }
-
     int slot = findFreeVoice();
-    if (slot < 0) slot = stealOldestVoice();
+    if (slot < 0) slot = stealVoice();
 
-    Voice& v   = voices_[slot];
+    Voice& v = voices_[slot];
+
     v.buffer   = buffer;
+    v.position = 0.0f;
     v.volume   = volume;
-    v.gate     = gate;
-    v.padIdx   = padIdx;
-    v.id       = nextId_.fetch_add(1, std::memory_order_relaxed);
-    v.stopping.store(false, std::memory_order_release);
-    v.position.store(0,     std::memory_order_release);
+    v.pitch    = std::pow(2.0f, pitchSemitone / 12.0f);
+
+    v.env      = 0.0f;
+    v.envStep  = 1.0f / 64.0f;
+
+    v.active   = true;
+    v.stopping = false;
+
+    v.padIdx = padIdx;
+    v.id     = nextId_++;
 
     return v.id;
 }
 
+// ─────────────────────────────
 void VoicePool::stop(int voiceId) {
-    for (auto& v : voices_)
-        if (v.id == voiceId && v.position.load(std::memory_order_relaxed) >= 0)
-            v.stopping.store(true, std::memory_order_release);
+    for (auto& v : voices_) {
+        if (v.id == voiceId && v.active) {
+            v.stopping = true;
+            v.envStep  = -1.0f / 64.0f;
+        }
+    }
 }
 
 void VoicePool::stopAll() {
-    for (auto& v : voices_)
-        v.stopping.store(true, std::memory_order_release);
+    for (auto& v : voices_) {
+        if (v.active) {
+            v.stopping = true;
+            v.envStep  = -1.0f / 64.0f;
+        }
+    }
 }
 
+// ─────────────────────────────
 void VoicePool::setTrackChain(int pad, EffectChain* chain) {
     if (pad >= 0 && pad < MAX_PADS_METER)
         trackChains_[pad] = chain;
@@ -57,115 +58,127 @@ void VoicePool::setMasterChain(EffectChain* chain) {
     masterChain_ = chain;
 }
 
+// ─────────────────────────────
 void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexcept {
     unsigned long f = std::min(frames, (unsigned long)MAX_FRAMES_PA);
 
-    // ── 1. Vider les buffers par canal ────────────────────────────
-    for (auto& cb : chanBufs_)
-        std::memset(cb.data(), 0, f * 2 * sizeof(float));
-    std::memset(masterBuf_.data(), 0, f * 2 * sizeof(float));
+    std::memset(out, 0, f * 2 * sizeof(float));
 
-    // ── 2. Distribuer chaque voix dans son canal ──────────────────
-    for (auto& v : voices_) {
-        int64_t pos = v.position.load(std::memory_order_acquire);
-        if (pos < 0) continue;
+    float peakL = 0.0f;
+    float peakR = 0.0f;
 
-        const AudioBuffer* buf = v.buffer;
-        if (!buf) continue;
-
-        int   pad     = v.padIdx;
-        bool  stopping= v.stopping.load(std::memory_order_relaxed);
-        float env     = 1.0f;
-        float fadeStep= stopping ? (1.0f / 16.0f) : 0.0f;
-
-        float* dst = (pad >= 0 && pad < MAX_PADS_METER)
-                     ? chanBufs_[pad].data()
-                     : masterBuf_.data();
-
-        for (unsigned long i = 0; i < f; ++i) {
-            if (pos >= buf->frameCount) { pos = -1; break; }
-            if (stopping) { env -= fadeStep; if (env <= 0.f) { pos = -1; break; } }
-
-            float gain = v.volume * env;
-            dst[i * 2]     += buf->samples[pos * 2]     * gain;
-            dst[i * 2 + 1] += buf->samples[pos * 2 + 1] * gain;
-            ++pos;
-        }
-        v.position.store(pos, std::memory_order_release);
-    }
-
-    // ── 3. Effets par canal + peak + somme dans master ────────────
     float tmpTrack[MAX_PADS_METER] = {};
 
-    for (int p = 0; p < MAX_PADS_METER; ++p) {
-        float* cb = chanBufs_[p].data();
+    for (auto& v : voices_) {
+        if (!v.active || !v.buffer) continue;
 
-        if (trackChains_[p])
-            trackChains_[p]->process(cb, static_cast<int>(f));
+        const AudioBuffer* buf = v.buffer;
+        const float* s = buf->samples.data();
+
+        float pos   = v.position;
+        float pitch = v.pitch;
 
         for (unsigned long i = 0; i < f; ++i) {
-            float pk = std::max(std::abs(cb[i*2]), std::abs(cb[i*2+1]));
-            if (pk > tmpTrack[p]) tmpTrack[p] = pk;
+            int idx = (int)pos;
+
+            if (idx >= buf->frameCount - 1) {
+                v.active = false;
+                break;
+            }
+
+            float frac = pos - idx;
+
+            float l0 = s[idx * 2];
+            float r0 = s[idx * 2 + 1];
+            float l1 = s[(idx + 1) * 2];
+            float r1 = s[(idx + 1) * 2 + 1];
+
+            float outL = l0 + (l1 - l0) * frac;
+            float outR = r0 + (r1 - r0) * frac;
+
+            // enveloppe
+            v.env += v.envStep;
+            if (v.env <= 0.0f) {
+                v.active = false;
+                break;
+            }
+            if (v.env > 1.0f) v.env = 1.0f;
+
+            float gain = v.volume * v.env;
+
+            float finalL = outL * gain;
+            float finalR = outR * gain;
+
+            out[i * 2]     += finalL;
+            out[i * 2 + 1] += finalR;
+
+            // peaks track
+            if (v.padIdx >= 0 && v.padIdx < MAX_PADS_METER) {
+                float pk = std::max(std::abs(finalL), std::abs(finalR));
+                if (pk > tmpTrack[v.padIdx])
+                    tmpTrack[v.padIdx] = pk;
+            }
+
+            // peaks master
+            if (std::abs(finalL) > peakL) peakL = std::abs(finalL);
+            if (std::abs(finalR) > peakR) peakR = std::abs(finalR);
+
+            pos += pitch;
         }
 
-        for (unsigned long i = 0; i < f * 2; ++i)
-            masterBuf_[i] += cb[i];
+        v.position = pos;
     }
 
-    // ── 4. Effets master ──────────────────────────────────────────
+    // effets master
     if (masterChain_)
-        masterChain_->process(masterBuf_.data(), static_cast<int>(f));
+        masterChain_->process(out, (int)f);
 
-    // ── 5. Master volume + peak master + copie output ─────────────
-    float tmpL = 0.f, tmpR = 0.f;
-    for (unsigned long i = 0; i < f; ++i) {
-        masterBuf_[i*2]   *= masterVolume;
-        masterBuf_[i*2+1] *= masterVolume;
-        if (std::abs(masterBuf_[i*2])   > tmpL) tmpL = std::abs(masterBuf_[i*2]);
-        if (std::abs(masterBuf_[i*2+1]) > tmpR) tmpR = std::abs(masterBuf_[i*2+1]);
-    }
-    std::memcpy(out, masterBuf_.data(), f * 2 * sizeof(float));
+    // volume master
+    for (unsigned long i = 0; i < f * 2; ++i)
+        out[i] *= masterVolume;
 
-    if (frames > f)
-        std::memset(out + f * 2, 0, (frames - f) * 2 * sizeof(float));
-
-    // ── 6. Peaks (max hold) ───────────────────────────────────────
+    // store peaks
     for (int p = 0; p < MAX_PADS_METER; ++p) {
         float cur = trackPeaks_[p].load(std::memory_order_relaxed);
         if (tmpTrack[p] > cur)
             trackPeaks_[p].store(tmpTrack[p], std::memory_order_relaxed);
     }
-    {
-        float cl = peakL_.load(std::memory_order_relaxed);
-        float cr = peakR_.load(std::memory_order_relaxed);
-        if (tmpL > cl) peakL_.store(tmpL, std::memory_order_relaxed);
-        if (tmpR > cr) peakR_.store(tmpR, std::memory_order_relaxed);
-    }
+
+    peakL_.store(peakL, std::memory_order_relaxed);
+    peakR_.store(peakR, std::memory_order_relaxed);
 }
 
+// ─────────────────────────────
 void VoicePool::decayPeaks(float factor) {
     for (auto& p : trackPeaks_) {
         float v = p.load(std::memory_order_relaxed) * factor;
         p.store(v, std::memory_order_relaxed);
     }
+
     peakL_.store(peakL_.load(std::memory_order_relaxed) * factor, std::memory_order_relaxed);
     peakR_.store(peakR_.load(std::memory_order_relaxed) * factor, std::memory_order_relaxed);
 }
 
+// ─────────────────────────────
 int VoicePool::findFreeVoice() {
     for (int i = 0; i < MAX_VOICES; ++i)
-        if (voices_[i].position.load(std::memory_order_relaxed) < 0)
+        if (!voices_[i].active)
             return i;
     return -1;
 }
 
-int VoicePool::stealOldestVoice() {
-    int oldest = 0; int64_t maxPos = -1;
+int VoicePool::stealVoice() {
+    int best = 0;
+    float lowestEnergy = 1e9f;
+
     for (int i = 0; i < MAX_VOICES; ++i) {
-        int64_t p = voices_[i].position.load(std::memory_order_relaxed);
-        if (p > maxPos) { maxPos = p; oldest = i; }
+        float energy = voices_[i].volume * voices_[i].env;
+        if (energy < lowestEnergy) {
+            lowestEnergy = energy;
+            best = i;
+        }
     }
-    return oldest;
+    return best;
 }
 
 } // namespace wako::audio
