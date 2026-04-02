@@ -1,22 +1,41 @@
-```
+# WakoSound — Roadmap
 
-**Roadmap pour la prochaine session :**
-```
-1. Bibliothèque de samples
-   - Browser multi-format (wav, mp3, flac, aiff)
-   - Drag → pad
-   - Sauvegarde en kit JSON
+## v1.0 ✅ (terminé)
 
-2. Mixage live
-   - Volume par track
-   - Volume master
-   - VU-mètres
+- Sampler MPC 9 pads, browser sidebar, drag → pad
+- Séquenceur 9×32 steps, polymétrie par track
+- Effets par channel : Sat (Tube/Transistor/Fuzz) → EQ5 → Reverb → Delay
+- Console mixage + VU-mètres 30fps
+- Export WAV (enregistrement direct sortie PortAudio)
+- Raccourcis AZERTY + Space/L + J/K
+- Reset complet (pattern + mixer + effets)
+- Stack 100% MIT/LGPL (commercialisable)
 
-3. Effets audio
-   - EQ 5 bands
-   - Saturation
-   - Reverb / Delay
+---
 
-4. Export
-   - WAV, MP3
-   - Render du pattern en fichier
+## Pistes futures
+
+### Distribution
+- AppImage Linux (linuxdeploy + plugin-qt)
+- Paquet .deb Ubuntu
+- Flatpak / Flathub
+
+### Séquenceur
+- Patterns multiples (A/B/C…) + arrangement linéaire
+- Humanisation (swing, vélocité aléatoire, micro-timing)
+- Steps ternaires (base /3 en plus de /4)
+- MIDI out (envoyer les steps vers des synths externes)
+
+### Audio
+- Resampling de qualité (actuellement interpolation linéaire dans VoicePool)
+- Compresseur/limiteur sur la chain master
+- Sidechain kick → compressor
+
+### UI
+- Zoom sur la StepGrid (afficher moins de tracks, plus grand)
+- Thèmes (clair / personnalisé)
+- Undo/Redo (historique des modifications pattern)
+
+### Kits
+- Import kit depuis dossier (auto-assign pads par ordre alphabétique)
+- Prévisualisation waveform dans le browser

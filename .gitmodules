@@ -1,4 +1,0 @@
-[submodule "vendor/signalsmith-stretch"]
-	path = vendor/signalsmith-stretch
-	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
-	ignore = dirty

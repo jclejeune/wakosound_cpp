@@ -8,33 +8,27 @@
 
 namespace wako::audio {
 
-// ──────────────────────────────────────────────────────────────────
-// ExportResult
-// ──────────────────────────────────────────────────────────────────
 struct ExportResult {
     bool        success  = false;
-    bool        clipping = false;   // true si peak > 1.0 détecté
-    float       peakLevel= 0.f;    // niveau max absolu
-    std::string error;              // message si !success
+    bool        clipping = false;
+    float       peakLevel= 0.f;
+    std::string error;
 };
 
 // ──────────────────────────────────────────────────────────────────
 // Exporter — render offline du pattern vers un fichier WAV
 //
 // Simule le séquenceur step par step sans PortAudio.
-// Applique les EffectChains (tracks + master) et le masterVolume.
-//
-// progressCb : appelé avec 0.0→1.0 pendant le render (UI thread safe
-//              si appelé depuis un QThread avec signal/slot).
+// Le pitch est géré par lecture à vitesse variable (identique au live) :
+// pitchFactor = 2^(semitones/12), interpolation linéaire entre frames.
+// Zéro latence, zéro dépendance externe.
 // ──────────────────────────────────────────────────────────────────
 class Exporter {
 public:
-    // sampleRate : 44100 Hz
-    // framesPerStep : frames audio par step (calculé depuis BPM)
     static ExportResult render(
         const seq::Pattern&                          pattern,
         const model::KitManager&                     kitManager,
-        std::array<EffectChain*, 10>&                chains,    // 0-8 tracks, 9 master
+        std::array<EffectChain*, 10>&                chains,
         float                                        masterVolume,
         int                                          loops,
         const std::string&                           outputPath,
@@ -43,18 +37,16 @@ public:
     );
 
 private:
-    // Mix un step dans outBuffer (stereo interleaved)
     static void mixStep(
-        const std::vector<int>&  activePads,
-        const seq::TrackSteps&   stepPositions,
-        const model::KitManager& kit,
-        const seq::Pattern&      pat,
+        const std::vector<int>&       activePads,
+        const seq::TrackSteps&        stepPositions,
+        const model::KitManager&      kit,
+        const seq::Pattern&           pat,
         std::array<EffectChain*, 10>& chains,
-        float                    masterVolume,
-        std::vector<float>&      outBuffer,
-        int                      framesPerStep,
-        int                      sampleRate,
-        float&                   peakOut
+        float                         masterVolume,
+        std::vector<float>&           outBuffer,
+        int                           framesPerStep,
+        float&                        peakOut
     );
 };
 

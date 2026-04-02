@@ -1,6 +1,6 @@
 # WakoSound
 
-Sampler MPC + séquenceur pas-à-pas. C++20, Qt6, PortAudio, libsndfile, signalsmith-stretch.
+Sampler MPC + séquenceur pas-à-pas. C++20, Qt6, PortAudio, libsndfile.
 
 > Projet personnel — première app C++, assisté par IA.
 
@@ -8,11 +8,11 @@ Sampler MPC + séquenceur pas-à-pas. C++20, Qt6, PortAudio, libsndfile, signals
 
 ## Fonctionnalités
 
-- **Sampler** — grille 3×3 MPC, déclenchement clavier numpad
+- **Sampler** — grille 3×3 MPC, déclenchement clavier AZERTY
 - **Browser** — navigateur de samples (wav, mp3, flac, aiff), drag → pad
 - **Séquenceur** — 9 tracks × 32 steps, polymétrie, pitch/volume/gate par step
 - **Mixage** — volume par track, master, VU-mètres animés 30 fps
-- **Effets** — par channel : Saturation (Tube / 303-808 / Fuzz) → EQ 5 bandes → Reverb → Delay
+- **Effets** — par channel : Saturation (Tube / Transistor / Fuzz) → EQ 5 bandes → Reverb → Delay
 - **Render** — export WAV par enregistrement direct de la sortie audio
 
 ---
@@ -32,21 +32,16 @@ sudo pacman -S cmake qt6-base qt6-svg portaudio libsndfile nlohmann-json
 brew install cmake qt6 portaudio libsndfile nlohmann-json
 ```
 
-> signalsmith-stretch est inclus via git submodule — pas besoin de l'installer.
+Aucun submodule — toutes les dépendances sont dans les dépôts système.
 
 ---
 
 ## Build
 
 ```bash
-# Cloner avec les dépendances
-git clone --recurse-submodules https://github.com/toi/wakosound.git
+git clone https://github.com/jclejeune/wakosound_cpp.git
 cd wakosound
 
-# Ou si déjà cloné sans --recurse-submodules
-git submodule update --init --recursive
-
-# Compiler
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
@@ -57,13 +52,16 @@ Kits : `build/kits.json`
 
 ---
 
-## Raccourcis
+## Raccourcis clavier
 
-| Touche     | Action       |
-|------------|--------------|
-| Numpad 7–9 | Pads ligne 1 |
-| Numpad 4–6 | Pads ligne 2 |
-| Numpad 1–3 | Pads ligne 3 |
+| Touche            | Action                            |
+|-------------------|-----------------------------------|
+| `A` `Z` `E`       | Pads 1 2 3 (ligne haute)          |
+| `Q` `S` `D`       | Pads 4 5 6 (ligne milieu)         |
+| `W` `X` `C`       | Pads 7 8 9 (ligne basse)          |
+| `Space` / `L`     | Play / Stop                       |
+| `K`               | Step suivant (séquenceur arrêté)  |
+| `J`               | Step précédent (séquenceur arrêté)|
 
 ---
 
@@ -79,14 +77,18 @@ Kits : `build/kits.json`
 | Double-clic sur label  | Reset longueur                |
 | G / M / S              | Gate / Mute / Solo par track  |
 
+> Le pitch est un **variateur de vitesse de lecture** (style MPC/sampler).
+> Pitch up = lecture plus rapide, pitch down = plus lente. Zéro latence, zéro dépendance externe.
+
 ---
 
 ## Licences
 
-| Composant | Licence |
-|-----------|---------|
-| Qt6 | LGPL v3 |
-| PortAudio | MIT |
-| libsndfile | LGPL v2.1 |
-| signalsmith-stretch | MIT |
-| nlohmann/json | MIT |
+| Composant     | Licence   |
+|---------------|-----------|
+| Qt6           | LGPL v3   |
+| PortAudio     | MIT       |
+| libsndfile    | LGPL v2.1 |
+| nlohmann/json | MIT       |
+
+Stack 100% MIT/LGPL — projet commercialisable sans restriction.

@@ -31,11 +31,10 @@ static const QColor BTN_MUTE  {180,  50,  50};   // rouge = muté
 static const QColor BTN_SOLO  {190, 150,   0};   // jaune = solo
 static const QColor BTN_FG    {220, 220, 220};
 
-// ── Layout :  [  LABEL_W  ][  BTN_W  ][  BTN_W  ][ grille ... ]
-// Les boutons M et S sont APRÈS le label
+// ── Layout :  [  LABEL_W  ][ G ][ M ][ S ][ grille ... ]
 static constexpr int LABEL_W  = 65;
 static constexpr int BTN_W    = 18;
-static constexpr int TOTAL_LW = LABEL_W + BTN_W * 2;  // offset avant grille
+static constexpr int TOTAL_LW = LABEL_W + BTN_W * 3;  // G + M + S
 static constexpr int HEADER_H = 22;
 
 static constexpr int DRAG_THRESHOLD = 5;
@@ -260,7 +259,7 @@ void StepGrid::mousePressEvent(QMouseEvent* ev) {
 
     if (ev->button() == Qt::LeftButton) {
         const seq::StepData& sd = pattern_->grid[pad][s];
-            drag_ = { true, pad, s, mx, my, sd.volume, sd.pitch, false, Axis::None };
+            drag_ = { true, pad, s, mx, (int)ev->position().y(), sd.volume, sd.pitch, false, Axis::None };
     }
 
     if (ev->button() == Qt::RightButton && s >= 0) {

@@ -48,7 +48,7 @@ private:
     int padY0(int p)  const;
     int padY1(int p)  const;
     int padAtY(int y) const;
-    int stepAtX(int x) const;  // >=0=step, -2=M, -3=S, -1=ailleurs
+    int stepAtX(int x) const;  // >=0=step, -2=G, -3=M, -4=S, -1=ailleurs
 
     QColor stepColor(int pitch, float volume, bool active) const;
     QColor textColor(const QColor& bg) const;
