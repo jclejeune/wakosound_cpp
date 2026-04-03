@@ -6,6 +6,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
+# ── macOS Homebrew — ajouter les chemins de recherche ─────────────
+if(APPLE)
+    list(APPEND CMAKE_PREFIX_PATH
+        "/opt/homebrew"
+        "/opt/homebrew/opt/portaudio"
+        "/opt/homebrew/opt/libsndfile"
+    )
+    include_directories("/opt/homebrew/include")
+    link_directories("/opt/homebrew/lib")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "")
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
@@ -60,6 +72,16 @@ target_link_libraries(WakoSound PRIVATE
     ${PORTAUDIO_LIBRARIES}
     ${SNDFILE_LIBRARIES}
 )
+
+# ── macOS — lier les frameworks système nécessaires à PortAudio ───
+if(APPLE)
+    target_link_libraries(WakoSound PRIVATE
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework AudioUnit"
+        "-framework CoreServices"
+    )
+endif()
 
 target_compile_options(WakoSound PRIVATE
     -Wall -Wextra -O2
