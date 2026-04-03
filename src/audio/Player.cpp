@@ -170,28 +170,26 @@ int Player::paCallback(const void*, void* output,
 
     auto* self = static_cast<Player*>(userData);
 
-    float mv = self->masterVolume_.load(std::memory_order_relaxed);
+    // On prend le volume BRUT (peut aller jusqu'à 4.0)
+    float masterVol = self->masterVolume_.load(std::memory_order_relaxed);
 
-    self->voicePool_.mix(
-        static_cast<float*>(output),
-        frames,
-        mv
-    );
+    // On mixe avec le vrai gain
+    self->voicePool_.mix(static_cast<float*>(output), frames, masterVol);
 
-    // ── Recording ─────────────────────────────
+    // PROTECTION FINALE : hard clip propre à ±1.0f (obligatoire pour ne pas cramer les oreilles/DAC)
+    float* out = static_cast<float*>(output);
+    for (unsigned long i = 0; i < frames * 2; ++i) {
+        if (out[i] > 1.0f) out[i] = 1.0f;
+        else if (out[i] < -1.0f) out[i] = -1.0f;
+    }
+
+    // Recording (inchangé)
     if (self->recording_.load(std::memory_order_relaxed)) {
-        int pos       = self->recordPos_.load(std::memory_order_relaxed);
+        int pos = self->recordPos_.load(std::memory_order_relaxed);
         int remaining = self->recordTotal_ - pos;
-
         if (remaining > 0) {
             int toCopy = std::min<int>((int)frames, remaining);
-
-            std::memcpy(
-                &self->recordBuf_[(size_t)pos * 2],
-                output,
-                (size_t)toCopy * 2 * sizeof(float)
-            );
-
+            std::memcpy(&self->recordBuf_[(size_t)pos * 2], output, (size_t)toCopy * 2 * sizeof(float));
             self->recordPos_.fetch_add(toCopy, std::memory_order_relaxed);
         }
     }

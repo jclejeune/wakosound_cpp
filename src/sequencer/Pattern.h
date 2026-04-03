@@ -30,10 +30,11 @@ struct Pattern {
     std::array<bool, MAX_PADS> muted{};
     std::array<bool, MAX_PADS> soloed{};
     std::array<bool, MAX_PADS> trackGate{};
+    std::array<bool, MAX_PADS> trackRetrigger{};  // true = stoppe la voix avant de rejouer
 
     // ── Mixage ────────────────────────────────────────────────────
-    std::array<float, MAX_PADS> trackVolumes{};  // 0.0–1.0 par track
-    float masterVolume = 1.0f;                   // volume master global
+    std::array<float, MAX_PADS> trackVolumes{};
+    float masterVolume = 1.0f;
 
     int bpm           = 120;
     int patternLength = 16;
@@ -44,6 +45,7 @@ struct Pattern {
         muted.fill(false);
         soloed.fill(false);
         trackGate.fill(false);
+        trackRetrigger.fill(true);   // retrigger activé par défaut
         trackVolumes.fill(1.0f);
     }
 
@@ -103,6 +105,10 @@ struct Pattern {
         if (pad >= 0 && pad < MAX_PADS) trackGate[pad] = !trackGate[pad];
         return *this;
     }
+    Pattern& toggleTrackRetrigger(int pad) {
+        if (pad >= 0 && pad < MAX_PADS) trackRetrigger[pad] = !trackRetrigger[pad];
+        return *this;
+    }
     Pattern& toggleMute(int pad) {
         if (pad >= 0 && pad < MAX_PADS) muted[pad] = !muted[pad];
         return *this;
@@ -126,6 +132,7 @@ struct Pattern {
         muted.fill(false);
         soloed.fill(false);
         trackGate.fill(false);
+        trackRetrigger.fill(true);
         trackVolumes.fill(1.0f);
         masterVolume = 1.0f;
         return *this;

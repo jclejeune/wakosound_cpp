@@ -154,6 +154,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         }
         *pattern_ = *loaded;
         stepGrid_->updatePattern(pattern_.get());
+        mixerPanel_->syncFromPattern();
         audio::Player::instance().setMasterVolume(pattern_->masterVolume);
         setFocus();
     });
@@ -178,6 +179,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     });
     connect(mixerPanel_, &MixerPanel::trackSoloToggled, this, [this](int pad) {
         pattern_->toggleSolo(pad); stepGrid_->update();
+    });
+
+    // ── Retrigger ─────────────────────────────────────────────────
+    connect(mixerPanel_, &MixerPanel::trackRetriggerToggled, this, [this](int pad) {
+        pattern_->toggleTrackRetrigger(pad);
     });
 
     connect(sampleBrowser_, &SampleBrowser::samplePreviewRequested,
@@ -314,7 +320,6 @@ void MainWindow::playCurrentStep() {
 
 void MainWindow::stepForward() {
     if (engine_->isRunning()) return;
-    // Avancer chaque track d'un step
     for (int p = 0; p < seq::MAX_PADS; ++p)
         pattern_->trackSteps[p] = (pattern_->trackSteps[p] + 1) % pattern_->trackLengths[p];
     playCurrentStep();
@@ -322,7 +327,6 @@ void MainWindow::stepForward() {
 
 void MainWindow::stepBackward() {
     if (engine_->isRunning()) return;
-    // Reculer chaque track d'un step
     for (int p = 0; p < seq::MAX_PADS; ++p) {
         pattern_->trackSteps[p] =
             (pattern_->trackSteps[p] - 1 + pattern_->trackLengths[p])
@@ -335,7 +339,6 @@ void MainWindow::stepBackward() {
 // keyPressEvent
 // ──────────────────────────────────────────────────────────────────
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-    // Ignorer les répétitions auto (touche maintenue)
     if (event->isAutoRepeat()) {
         QMainWindow::keyPressEvent(event);
         return;
@@ -343,25 +346,19 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 
     const Qt::Key key = static_cast<Qt::Key>(event->key());
 
-    // ── Space / L → Play/Stop ─────────────────────────────────────
     if (key == Qt::Key_Space || key == Qt::Key_L) {
         onPlayStop();
         return;
     }
-
-    // ── K → step forward ─────────────────────────────────────────
     if (key == Qt::Key_K) {
         stepForward();
         return;
     }
-
-    // ── J → step backward ────────────────────────────────────────
     if (key == Qt::Key_J) {
         stepBackward();
         return;
     }
 
-    // ── A Z E / Q S D / W X C → pads ─────────────────────────────
     for (int i = 0; i < 9; ++i) {
         if (key == PAD_KEYS[i]) {
             emit padGrid_->padTriggered(i);

@@ -34,6 +34,8 @@ class VoicePool {
 public:
     static constexpr int MAX_VOICES = 256;
 
+    VoicePool(); // <-- IMPORTANT pour corriger l'erreur
+
     void setSampleRate(int sr) { sampleRate_ = sr; }
 
     int  play(const AudioBuffer* buffer, float volume = 1.0f,
@@ -44,6 +46,9 @@ public:
 
     void setTrackChain(int pad, EffectChain* chain);
     void setMasterChain(EffectChain* chain);
+
+    // +12 dB possible: UI envoie jusqu'à 4.0f
+    void setTrackVolume(int pad, float volume);
 
     void mix(float* out, unsigned long frames, float masterVolume = 1.0f) noexcept;
 
@@ -68,6 +73,9 @@ private:
 
     std::array<EffectChain*, MAX_PADS_METER> trackChains_{};
     EffectChain* masterChain_ = nullptr;
+
+    // volumes de pistes (atomic pour éviter data race UI->audio)
+    std::array<std::atomic<float>, MAX_PADS_METER> trackVolumes_{};
 
     std::array<std::atomic<float>, MAX_PADS_METER> trackPeaks_{};
     std::atomic<float> peakL_{0};

@@ -30,18 +30,20 @@ bool Pattern::saveToFile(const std::string& path) const {
         jLengths.push_back(trackLengths[p]);
     j["trackLengths"] = jLengths;
 
-    // mute/solo/gate par track
-    auto jMuted     = nlohmann::json::array();
-    auto jSoloed    = nlohmann::json::array();
-    auto jTrackGate = nlohmann::json::array();
+    auto jMuted      = nlohmann::json::array();
+    auto jSoloed     = nlohmann::json::array();
+    auto jTrackGate  = nlohmann::json::array();
+    auto jRetrigger  = nlohmann::json::array();
     for (int p = 0; p < MAX_PADS; ++p) {
         jMuted.push_back(muted[p]);
         jSoloed.push_back(soloed[p]);
         jTrackGate.push_back(trackGate[p]);
+        jRetrigger.push_back(trackRetrigger[p]);
     }
-    j["muted"]     = jMuted;
-    j["soloed"]    = jSoloed;
-    j["trackGate"] = jTrackGate;
+    j["muted"]          = jMuted;
+    j["soloed"]         = jSoloed;
+    j["trackGate"]      = jTrackGate;
+    j["trackRetrigger"] = jRetrigger;
 
     auto jgrid = nlohmann::json::array();
     for (int p = 0; p < MAX_PADS; ++p) {
@@ -99,6 +101,13 @@ std::optional<Pattern> Pattern::loadFromFile(const std::string& path) {
     if (j.contains("trackGate") && j["trackGate"].is_array())
         for (int p = 0; p < MAX_PADS && p < (int)j["trackGate"].size(); ++p)
             pat.trackGate[p] = j["trackGate"][p].get<bool>();
+
+    // Backward compatible — absent dans les anciens fichiers → true par défaut
+    if (j.contains("trackRetrigger") && j["trackRetrigger"].is_array())
+        for (int p = 0; p < MAX_PADS && p < (int)j["trackRetrigger"].size(); ++p)
+            pat.trackRetrigger[p] = j["trackRetrigger"][p].get<bool>();
+    else
+        pat.trackRetrigger.fill(true);
 
     if (j.contains("grid") && j["grid"].is_array()) {
         for (int p = 0; p < MAX_PADS && p < (int)j["grid"].size(); ++p) {

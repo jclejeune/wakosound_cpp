@@ -29,7 +29,7 @@ public:
 
     // ── Master volume ─────────────────────────────
     void setMasterVolume(float v) {
-        masterVolume_.store(std::clamp(v, 0.f, 1.f), std::memory_order_relaxed);
+    masterVolume_.store(v, std::memory_order_relaxed);  // PLUS DE CLAMP ICI !
     }
 
     float masterVolume() const {
