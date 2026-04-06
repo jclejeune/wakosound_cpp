@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     applyDarkTheme(app);
 
     // Démarrer PortAudio avant la fenêtre
-    if (!wako::audio::Player::instance().init(44100, 256)) {
+    if (!wako::audio::Player::instance().init(44100, 512)) {
         std::cerr << "FATAL: impossible d'ouvrir le stream audio\n";
         return 1;
     }

@@ -53,7 +53,7 @@ Vide le cache.
 
 ### `VoicePool`
 
-Pool de 256 voix audio fixes. Zéro allocation dans le callback PortAudio.
+Pool de 512 voix audio fixes. Zéro allocation dans le callback PortAudio.
 
 #### Pitch par vitesse de lecture
 Le pitch shifting est purement mécanique : `pos += pitchFactor` à chaque frame,
@@ -64,7 +64,7 @@ avec `pitchFactor = 2^(semitones/12)`. Identique au principe d'un sampler MPC.
 - Interpolation linéaire entre frames consécutives pour éviter les artefacts
 
 #### `int play(const AudioBuffer* buffer, float volume, bool gate, int padIdx, int pitch)`
-Démarre une voix. Voice stealing si toutes les 256 voix sont occupées.
+Démarre une voix. Voice stealing si toutes les 512 voix sont occupées.
 
 #### `void stop(int voiceId)`
 Fade-out 64 frames sur la voix identifiée.
@@ -79,7 +79,7 @@ puis la chain master. Aucune allocation. Met à jour les peak meters.
 
 Singleton. Wraps PortAudio + `VoicePool`.
 
-#### `bool init(int sampleRate = 44100, int framesPerBuffer = 256)`
+#### `bool init(int sampleRate = 44100, int framesPerBuffer = 512)`
 Initialise PortAudio, ouvre le stream stéréo float32.
 
 #### `int play(const string& filePath, float volume, int pitch, bool gate, int padIdx)`

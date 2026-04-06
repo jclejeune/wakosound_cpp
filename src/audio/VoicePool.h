@@ -32,7 +32,7 @@ struct Voice {
 
 class VoicePool {
 public:
-    static constexpr int MAX_VOICES = 256;
+    static constexpr int MAX_VOICES = 512;
 
     VoicePool(); // <-- IMPORTANT pour corriger l'erreur
 

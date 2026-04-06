@@ -15,7 +15,7 @@ public:
     static Player& instance();
     ~Player();
 
-    bool init(int sampleRate = 44100, int framesPerBuffer = 256);
+    bool init(int sampleRate = 44100, int framesPerBuffer = 512);
     void shutdown();
 
     int  play(const std::string& filePath,
