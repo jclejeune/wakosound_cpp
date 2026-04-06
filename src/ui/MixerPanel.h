@@ -30,7 +30,7 @@ private:
     float peakHold_ = 0.f;
 };
 
-// ── MixerFader — Slider avec marque 0 dB ──────────────────────────
+// ── MixerFader ────────────────────────────────────────────────────
 class MixerFader : public QSlider {
     Q_OBJECT
 public:
@@ -48,7 +48,8 @@ private:
 class MixerPanel : public QWidget {
     Q_OBJECT
 public:
-    explicit MixerPanel(std::shared_ptr<seq::Pattern> pattern,
+    explicit MixerPanel(std::shared_ptr<seq::Pattern>      pattern,
+                        std::shared_ptr<model::KitManager> kitManager,
                         QWidget* parent = nullptr);
     ~MixerPanel();
 
@@ -62,6 +63,7 @@ signals:
     void trackMuteToggled(int pad);
     void trackSoloToggled(int pad);
     void trackRetriggerToggled(int pad);
+    void padModeChanged(int pad, model::PlayMode mode);
 
 private slots:
     void onTimer();
@@ -70,8 +72,10 @@ private:
     void buildStrip(int pad, QWidget* container);
     void buildMasterStrip(QWidget* container);
     void updateMuteSoloButtons();
+    void updateModeButtons(int pad);
 
-    std::shared_ptr<seq::Pattern> pattern_;
+    std::shared_ptr<seq::Pattern>      pattern_;
+    std::shared_ptr<model::KitManager> kitManager_;
 
     std::array<VuMeter*,     seq::MAX_PADS> trackVu_{};
     std::array<QWidget*,     seq::MAX_PADS> trackLabels_{};
@@ -79,6 +83,9 @@ private:
     std::array<QPushButton*, seq::MAX_PADS> soloButtons_{};
     std::array<QPushButton*, seq::MAX_PADS> retriggerButtons_{};
     std::array<QPushButton*, seq::MAX_PADS> fxButtons_{};
+
+    // 4 boutons de mode par pad : Once / Loop / Reverse / LoopReverse
+    std::array<std::array<QPushButton*, 4>, seq::MAX_PADS> modeButtons_{};
 
     std::array<MixerFader*, seq::MAX_PADS> trackSliders_{};
     MixerFader* masterSlider_ = nullptr;

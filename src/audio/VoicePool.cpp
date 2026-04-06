@@ -4,7 +4,7 @@ namespace wako::audio {
 
 VoicePool::VoicePool() {
     for (int p = 0; p < MAX_PADS_METER; ++p) {
-        trackVolumes_[p].store(1.0f, std::memory_order_relaxed); // 0 dB par défaut
+        trackVolumes_[p].store(1.0f, std::memory_order_relaxed);
         trackPeaks_[p].store(0.0f, std::memory_order_relaxed);
     }
     peakL_.store(0.0f, std::memory_order_relaxed);
@@ -12,27 +12,34 @@ VoicePool::VoicePool() {
 }
 
 int VoicePool::play(const AudioBuffer* buffer, float volume,
-                     bool /*gate*/, int padIdx, int pitchSemitone) {
+                     bool /*gate*/, int padIdx, int pitchSemitone,
+                     model::PlayMode mode) {
     if (!buffer || buffer->empty()) return -1;
 
     int slot = findFreeVoice();
     if (slot < 0) slot = stealVoice();
 
-    Voice& v = voices_[slot];
-
+    Voice& v   = voices_[slot];
     v.buffer   = buffer;
-    v.position = 0.0f;
     v.volume   = volume;
     v.pitch    = std::pow(2.0f, pitchSemitone / 12.0f);
+    v.mode     = mode;
+
+    // ── Position initiale selon le mode ────────────────────────────
+    // Reverse : on démarre à la fin du sample
+    if (mode == model::PlayMode::Reverse ||
+        mode == model::PlayMode::LoopReverse) {
+        v.position = static_cast<float>(buffer->frameCount - 2);
+    } else {
+        v.position = 0.0f;
+    }
 
     v.env      = 0.0f;
     v.envStep  = 1.0f / 64.0f;
-
     v.active   = true;
     v.stopping = false;
-
-    v.padIdx = padIdx;
-    v.id     = nextId_++;
+    v.padIdx   = padIdx;
+    v.id       = nextId_++;
 
     return v.id;
 }
@@ -66,9 +73,52 @@ void VoicePool::setMasterChain(EffectChain* chain) {
 
 void VoicePool::setTrackVolume(int pad, float volume) {
     if (pad >= 0 && pad < MAX_PADS_METER)
-        trackVolumes_[pad].store(volume, std::memory_order_relaxed); // accepte >1.0
+        trackVolumes_[pad].store(volume, std::memory_order_relaxed);
 }
 
+// ──────────────────────────────────────────────────────────────────
+// advance position — gère les 4 modes
+// Retourne false si la voix doit s'arrêter
+// ──────────────────────────────────────────────────────────────────
+static inline bool advanceVoice(Voice& v) noexcept {
+    const int64_t len = v.buffer->frameCount;
+
+    switch (v.mode) {
+
+        case model::PlayMode::Once:
+            v.position += v.pitch;
+            if (static_cast<int64_t>(v.position) >= len - 1) {
+                v.active = false;
+                return false;
+            }
+            break;
+
+        case model::PlayMode::Loop:
+            v.position += v.pitch;
+            if (static_cast<int64_t>(v.position) >= len - 1)
+                v.position = 0.0f;   // rewind
+            break;
+
+        case model::PlayMode::Reverse:
+            v.position -= v.pitch;
+            if (v.position <= 0.0f) {
+                v.active = false;
+                return false;
+            }
+            break;
+
+        case model::PlayMode::LoopReverse:
+            v.position -= v.pitch;
+            if (v.position <= 0.0f)
+                v.position = static_cast<float>(len - 2); // rewind
+            break;
+    }
+    return true;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// mix — callback RT
+// ──────────────────────────────────────────────────────────────────
 void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexcept {
     unsigned long f = std::min(frames, (unsigned long)MAX_FRAMES_PA);
 
@@ -77,17 +127,14 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
         std::memset(cb.data(), 0, f * 2 * sizeof(float));
     std::memset(masterBuf_.data(), 0, f * 2 * sizeof(float));
 
-    // 2) Mixage des voix avec VOLUME DE PISTE
+    // 2) Mixage des voix
     for (auto& v : voices_) {
         if (!v.active || !v.buffer) continue;
 
         const AudioBuffer* buf = v.buffer;
         const float* s = buf->samples.data();
 
-        float pos   = v.position;
-        float pitch = v.pitch;
-        int   pad   = v.padIdx;
-
+        int  pad       = v.padIdx;
         float trackGain = 1.0f;
         if (pad >= 0 && pad < MAX_PADS_METER)
             trackGain = trackVolumes_[pad].load(std::memory_order_relaxed);
@@ -97,13 +144,15 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
                      : masterBuf_.data();
 
         for (unsigned long i = 0; i < f; ++i) {
-            int idx = (int)pos;
-            if (idx >= buf->frameCount - 1) {
+            int idx = static_cast<int>(v.position);
+
+            // Sécurité bounds
+            if (idx < 0 || idx >= buf->frameCount - 1) {
                 v.active = false;
                 break;
             }
 
-            float frac = pos - idx;
+            float frac = v.position - idx;
 
             float l0 = s[idx * 2];
             float r0 = s[idx * 2 + 1];
@@ -122,10 +171,9 @@ void VoicePool::mix(float* out, unsigned long frames, float masterVolume) noexce
             dst[i * 2]     += outL * gain;
             dst[i * 2 + 1] += outR * gain;
 
-            pos += pitch;
+            // Avance la position selon le mode
+            if (!advanceVoice(v)) break;
         }
-
-        v.position = pos;
     }
 
     // 3) Effets par piste + peak + somme dans master
@@ -193,20 +241,14 @@ int VoicePool::findFreeVoice() {
     return -1;
 }
 
+// Steal la voix la plus ancienne (lowest id)
 int VoicePool::stealVoice() {
-    int best = 0;
-    float oldest = voices_[0].position;
-
+    int best     = 0;
+    int lowestId = voices_[0].id;
     for (int i = 1; i < MAX_VOICES; ++i) {
-        const Voice& v = voices_[i];
-        if (!v.buffer || v.buffer->frameCount == 0) return i;
-
-        float progress = (v.position * v.pitch) /
-                          static_cast<float>(v.buffer->frameCount);
-
-        if (progress > oldest) {
-            oldest = progress;
-            best = i;
+        if (voices_[i].active && voices_[i].id < lowestId) {
+            lowestId = voices_[i].id;
+            best     = i;
         }
     }
     return best;

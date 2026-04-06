@@ -5,11 +5,39 @@
 
 namespace wako::model {
 
+// ──────────────────────────────────────────────────────────────────
+// PlayMode — mode de lecture du sample
+// ──────────────────────────────────────────────────────────────────
+enum class PlayMode {
+    Once        = 0,  // ▶  joue jusqu'au bout et meurt
+    Loop        = 1,  // ↺  boucle infinie
+    Reverse     = 2,  // ◀  lecture à l'envers, meurt à 0
+    LoopReverse = 3,  // ↺◀ boucle à l'envers
+};
+
+inline const char* playModeStr(PlayMode m) {
+    switch (m) {
+        case PlayMode::Once:        return "once";
+        case PlayMode::Loop:        return "loop";
+        case PlayMode::Reverse:     return "reverse";
+        case PlayMode::LoopReverse: return "loop_reverse";
+    }
+    return "once";
+}
+
+inline PlayMode playModeFromStr(const std::string& s) {
+    if (s == "loop")         return PlayMode::Loop;
+    if (s == "reverse")      return PlayMode::Reverse;
+    if (s == "loop_reverse") return PlayMode::LoopReverse;
+    return PlayMode::Once;
+}
+
 struct Pad {
     std::string name;
     std::string filePath;
     float       volume      = 1.0f;
     bool        enabled     = true;
+    PlayMode    mode        = PlayMode::Once;
     std::string description;
     std::string color;
 
@@ -24,7 +52,7 @@ struct Kit {
     std::string      name;
     std::string      description;
     std::vector<Pad> pads;
-    bool             isFactory = false;   // true = factory, jamais écrit
+    bool             isFactory = false;
 
     bool       full()    const { return static_cast<int>(pads.size()) == MAX_PADS; }
     bool       empty()   const { return pads.empty(); }
@@ -34,23 +62,12 @@ struct Kit {
 
 // ──────────────────────────────────────────────────────────────────
 // KitManager
-//
-// Deux sources distinctes :
-//   loadFactory("kits.json")    → isFactory=true,  jamais réécrits
-//   loadUser("user_kits.json")  → isFactory=false, silencieux si absent
-//
-// saveUserKits()  → écrit uniquement les kits utilisateur
-// clearUserKits() → vide les kits utilisateur en mémoire
 // ──────────────────────────────────────────────────────────────────
 class KitManager {
 public:
-    // Charge les kits factory. Réinitialise la liste complète.
     bool loadFactory(const std::string& jsonPath);
-
-    // Ajoute les kits utilisateur par-dessus. Silencieux si absent.
     void loadUser(const std::string& jsonPath);
 
-    // ── Accès ─────────────────────────────────────────────────────
     const Kit*              currentKit()   const;
     Kit*                    currentKitMutable();
     const std::vector<Kit>& kits()         const { return kits_; }
@@ -60,40 +77,26 @@ public:
     bool switchTo(int index);
     bool switchByName(const std::string& name);
 
-    // ── Mutations utilisateur ─────────────────────────────────────
-
-    // Assigne un fichier à un pad du kit courant.
-    // Retourne false si le kit courant est factory.
     bool setPadFile(int padIdx,
                     const std::string& filePath,
                     const std::string& name = "");
 
-    // Ajoute ou remplace un kit utilisateur (même nom → remplacement).
-    // Ne touche jamais aux kits factory.
-    // Retourne l'index résultant dans kits_.
-    int upsertUserKit(Kit kit);
+    bool setPadMode(int padIdx, PlayMode mode);
 
-    // Supprime tous les kits !isFactory. Les factory restent intacts.
-    // Si le kit courant était utilisateur, bascule sur le premier factory.
+    int  upsertUserKit(Kit kit);
     void clearUserKits();
-
-    // ── Persistance ───────────────────────────────────────────────
-    // Écrit uniquement les kits !isFactory dans userPath_.
     bool saveUserKits() const;
 
-    // ── Helpers ───────────────────────────────────────────────────
     std::vector<std::string> currentKitFilePaths() const;
 
 private:
     std::vector<Kit>          kits_;
     int                       currentIdx_  = 0;
     std::string               userPath_;
-    std::filesystem::path     factoryBase_;   // dossier du kits.json factory
+    std::filesystem::path     factoryBase_;
 
     static std::string nameToId(const std::string& name);
-
     static std::vector<Kit> parseFile(const std::string& jsonPath, bool isFactory);
-
     bool writeKits(const std::string& path,
                    const std::vector<Kit>& kits,
                    const std::filesystem::path& base) const;

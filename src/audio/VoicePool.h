@@ -1,6 +1,7 @@
 #pragma once
 #include "AudioCache.h"
 #include "EffectChain.h"
+#include "../model/KitManager.h"
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -16,30 +17,37 @@ static constexpr int MAX_FRAMES_PA  = 4096;
 struct Voice {
     const AudioBuffer* buffer = nullptr;
 
-    float position = 0.0f;
-    float volume   = 1.0f;
-    float pitch    = 1.0f;
+    float    position = 0.0f;
+    float    volume   = 1.0f;
+    float    pitch    = 1.0f;
 
-    float env      = 0.0f;
-    float envStep  = 0.0f;
+    float    env      = 0.0f;
+    float    envStep  = 0.0f;
 
-    bool  active   = false;
-    bool  stopping = false;
+    bool     active   = false;
+    bool     stopping = false;
 
-    int   id       = -1;
-    int   padIdx   = -1;
+    int      id       = -1;
+    int      padIdx   = -1;
+
+    // ── Mode de lecture ────────────────────────────────────────────
+    model::PlayMode mode = model::PlayMode::Once;
 };
 
 class VoicePool {
 public:
-    static constexpr int MAX_VOICES = 512;
+    static constexpr int MAX_VOICES = 1024;
 
-    VoicePool(); // <-- IMPORTANT pour corriger l'erreur
+    VoicePool();
 
     void setSampleRate(int sr) { sampleRate_ = sr; }
 
-    int  play(const AudioBuffer* buffer, float volume = 1.0f,
-              bool gate = false, int padIdx = -1, int pitch = 0);
+    int  play(const AudioBuffer* buffer,
+              float volume       = 1.0f,
+              bool  gate         = false,
+              int   padIdx       = -1,
+              int   pitch        = 0,
+              model::PlayMode mode = model::PlayMode::Once);
 
     void stop(int voiceId);
     void stopAll();
@@ -47,13 +55,12 @@ public:
     void setTrackChain(int pad, EffectChain* chain);
     void setMasterChain(EffectChain* chain);
 
-    // +12 dB possible: UI envoie jusqu'à 4.0f
     void setTrackVolume(int pad, float volume);
 
     void mix(float* out, unsigned long frames, float masterVolume = 1.0f) noexcept;
 
-    // ── Metering ─────────────────────────────
-    float trackPeak(int pad) const {
+    // ── Metering ─────────────────────────────────────────────────
+    float trackPeak(int pad)  const {
         if (pad < 0 || pad >= MAX_PADS_METER) return 0.f;
         return trackPeaks_[pad].load(std::memory_order_relaxed);
     }
@@ -67,16 +74,13 @@ private:
     int nextId_     = 0;
     int sampleRate_ = 44100;
 
-    // Buffers intermédiaires par track — zéro alloc en RT
     std::array<std::array<float, MAX_FRAMES_PA * 2>, MAX_PADS_METER> chanBufs_{};
     std::array<float, MAX_FRAMES_PA * 2> masterBuf_{};
 
     std::array<EffectChain*, MAX_PADS_METER> trackChains_{};
     EffectChain* masterChain_ = nullptr;
 
-    // volumes de pistes (atomic pour éviter data race UI->audio)
     std::array<std::atomic<float>, MAX_PADS_METER> trackVolumes_{};
-
     std::array<std::atomic<float>, MAX_PADS_METER> trackPeaks_{};
     std::atomic<float> peakL_{0};
     std::atomic<float> peakR_{0};

@@ -6,7 +6,6 @@
 
 namespace wako::audio {
 
-// ─────────────────────────────────────────────
 Player& Player::instance() {
     static Player inst;
     return inst;
@@ -16,7 +15,6 @@ Player::~Player() {
     shutdown();
 }
 
-// ─────────────────────────────────────────────
 bool Player::init(int sampleRate, int framesPerBuffer) {
     sampleRate_ = sampleRate;
 
@@ -50,27 +48,20 @@ bool Player::init(int sampleRate, int framesPerBuffer) {
         Pa_GetDeviceInfo(out.device)->defaultLowOutputLatency;
 
     PaError openErr = Pa_OpenStream(
-        &stream_,
-        nullptr,
-        &out,
-        sampleRate,
-        framesPerBuffer,
-        paClipOff,
-        &Player::paCallback,
-        this
+        &stream_, nullptr, &out,
+        sampleRate, framesPerBuffer,
+        paClipOff, &Player::paCallback, this
     );
 
     if (openErr != paNoError) {
-        std::cerr << "[Player] Pa_OpenStream: "
-                  << Pa_GetErrorText(openErr) << "\n";
+        std::cerr << "[Player] Pa_OpenStream: " << Pa_GetErrorText(openErr) << "\n";
         Pa_Terminate();
         return false;
     }
 
     PaError startErr = Pa_StartStream(stream_);
     if (startErr != paNoError) {
-        std::cerr << "[Player] Pa_StartStream: "
-                  << Pa_GetErrorText(startErr) << "\n";
+        std::cerr << "[Player] Pa_StartStream: " << Pa_GetErrorText(startErr) << "\n";
         Pa_CloseStream(stream_);
         Pa_Terminate();
         stream_ = nullptr;
@@ -80,11 +71,9 @@ bool Player::init(int sampleRate, int framesPerBuffer) {
     std::cout << "[Player] Stream ouvert — "
               << sampleRate << " Hz, buffer "
               << framesPerBuffer << " frames\n";
-
     return true;
 }
 
-// ─────────────────────────────────────────────
 void Player::shutdown() {
     if (stream_) {
         Pa_StopStream(stream_);
@@ -94,31 +83,20 @@ void Player::shutdown() {
     }
 }
 
-// ─────────────────────────────────────────────
 int Player::play(const std::string& filePath, float volume,
-                 int pitch, bool gate, int padIdx) {
-
+                 int pitch, bool gate, int padIdx,
+                 model::PlayMode mode) {
     const AudioBuffer* buf = AudioCache::instance().get(filePath);
     if (!buf) return -1;
-
-    return voicePool_.play(buf, volume, gate, padIdx, pitch);
+    return voicePool_.play(buf, volume, gate, padIdx, pitch, mode);
 }
 
-void Player::stop(int voiceId) {
-    voicePool_.stop(voiceId);
-}
+void Player::stop(int voiceId)  { voicePool_.stop(voiceId); }
+void Player::stopAll()          { voicePool_.stopAll(); }
 
-void Player::stopAll() {
-    voicePool_.stopAll();
-}
-
-// ─────────────────────────────────────────────
-// RECORDING
-// ─────────────────────────────────────────────
 void Player::startRecording(int totalFrames) {
     recordBuf_.assign(static_cast<size_t>(totalFrames * 2), 0.f);
     recordTotal_ = totalFrames;
-
     recordPos_.store(0, std::memory_order_release);
     recording_.store(true, std::memory_order_release);
 }
@@ -139,57 +117,44 @@ bool Player::stopRecording(const std::string& outputPath) {
 
     SNDFILE* sf = sf_open(outputPath.c_str(), SFM_WRITE, &info);
     if (!sf) {
-        std::cerr << "[Player] stopRecording: "
-                  << sf_strerror(nullptr) << "\n";
+        std::cerr << "[Player] stopRecording: " << sf_strerror(nullptr) << "\n";
         return false;
     }
 
     sf_count_t written = sf_writef_float(
-        sf,
-        recordBuf_.data(),
+        sf, recordBuf_.data(),
         static_cast<sf_count_t>(framesRecorded)
     );
-
     sf_close(sf);
 
     std::cout << "[Player] WAV écrit : "
-              << framesRecorded << " frames → "
-              << outputPath << "\n";
-
+              << framesRecorded << " frames → " << outputPath << "\n";
     return written > 0;
 }
 
-// ─────────────────────────────────────────────
-// CALLBACK AUDIO (RT)
-// ─────────────────────────────────────────────
 int Player::paCallback(const void*, void* output,
                        unsigned long frames,
                        const PaStreamCallbackTimeInfo*,
                        PaStreamCallbackFlags,
                        void* userData) {
-
     auto* self = static_cast<Player*>(userData);
 
-    // On prend le volume BRUT (peut aller jusqu'à 4.0)
     float masterVol = self->masterVolume_.load(std::memory_order_relaxed);
-
-    // On mixe avec le vrai gain
     self->voicePool_.mix(static_cast<float*>(output), frames, masterVol);
 
-    // PROTECTION FINALE : hard clip propre à ±1.0f (obligatoire pour ne pas cramer les oreilles/DAC)
     float* out = static_cast<float*>(output);
     for (unsigned long i = 0; i < frames * 2; ++i) {
-        if (out[i] > 1.0f) out[i] = 1.0f;
+        if (out[i] >  1.0f) out[i] =  1.0f;
         else if (out[i] < -1.0f) out[i] = -1.0f;
     }
 
-    // Recording (inchangé)
     if (self->recording_.load(std::memory_order_relaxed)) {
-        int pos = self->recordPos_.load(std::memory_order_relaxed);
+        int pos       = self->recordPos_.load(std::memory_order_relaxed);
         int remaining = self->recordTotal_ - pos;
         if (remaining > 0) {
             int toCopy = std::min<int>((int)frames, remaining);
-            std::memcpy(&self->recordBuf_[(size_t)pos * 2], output, (size_t)toCopy * 2 * sizeof(float));
+            std::memcpy(&self->recordBuf_[(size_t)pos * 2], output,
+                        (size_t)toCopy * 2 * sizeof(float));
             self->recordPos_.fetch_add(toCopy, std::memory_order_relaxed);
         }
     }

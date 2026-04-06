@@ -40,8 +40,6 @@ std::string KitManager::nameToId(const std::string& name) {
     return id.empty() ? "kit" : id;
 }
 
-// Lecture d'un fichier JSON de kits.
-// baseDir est utilisé pour résoudre les chemins relatifs des samples.
 std::vector<Kit> KitManager::parseFile(const std::string& jsonPath, bool isFactory) {
     std::ifstream f(jsonPath);
     if (!f.is_open()) return {};
@@ -72,6 +70,8 @@ std::vector<Kit> KitManager::parseFile(const std::string& jsonPath, bool isFacto
             pad.enabled     = jpad.value("enabled", true);
             pad.description = jpad.value("description", "");
             pad.color       = jpad.value("color", "");
+            pad.mode        = playModeFromStr(jpad.value("mode", "once"));
+
             std::string rel = jpad.value("file", "");
             if (!rel.empty())
                 pad.filePath = (base / rel).lexically_normal().string();
@@ -83,8 +83,8 @@ std::vector<Kit> KitManager::parseFile(const std::string& jsonPath, bool isFacto
 }
 
 bool KitManager::writeKits(const std::string& path,
-                            const std::vector<Kit>& kits,
-                            const fs::path& base) const {
+                             const std::vector<Kit>& kits,
+                             const fs::path& base) const {
     json root;
     auto jarr = json::array();
     for (const auto& kit : kits) {
@@ -98,7 +98,6 @@ bool KitManager::writeKits(const std::string& path,
             json jpad;
             jpad["name"] = pad.name;
 
-            // Stocker relatif si possible
             std::string stored;
             try {
                 stored = fs::relative(fs::path(pad.filePath), base).generic_string();
@@ -106,6 +105,7 @@ bool KitManager::writeKits(const std::string& path,
                 stored = pad.filePath;
             }
             jpad["file"] = stored;
+            jpad["mode"] = playModeStr(pad.mode);
 
             if (pad.volume != 1.0f)       jpad["volume"]      = pad.volume;
             if (!pad.enabled)             jpad["enabled"]     = false;
@@ -131,26 +131,24 @@ bool KitManager::writeKits(const std::string& path,
 // API publique
 // ──────────────────────────────────────────────────────────────────
 bool KitManager::loadFactory(const std::string& jsonPath) {
-    auto kits = parseFile(jsonPath, /*isFactory=*/true);
+    auto kits = parseFile(jsonPath, true);
     if (kits.empty()) {
         std::cerr << "[KitManager] No factory kits in: " << jsonPath << "\n";
         return false;
     }
-    kits_       = std::move(kits);
-    currentIdx_ = 0;
+    kits_        = std::move(kits);
+    currentIdx_  = 0;
     factoryBase_ = fs::absolute(fs::path(jsonPath)).parent_path();
     return true;
 }
 
 void KitManager::loadUser(const std::string& jsonPath) {
     userPath_ = jsonPath;
-    auto userKits = parseFile(jsonPath, /*isFactory=*/false);
+    auto userKits = parseFile(jsonPath, false);
     for (auto& k : userKits)
         kits_.push_back(std::move(k));
-    // currentIdx_ reste sur le premier kit factory
 }
 
-// ── Accès ─────────────────────────────────────────────────────────
 const Kit* KitManager::currentKit() const {
     if (currentIdx_ < 0 || currentIdx_ >= static_cast<int>(kits_.size()))
         return nullptr;
@@ -185,14 +183,11 @@ std::vector<std::string> KitManager::currentKitFilePaths() const {
     return paths;
 }
 
-// ── Mutations utilisateur ──────────────────────────────────────────
 bool KitManager::setPadFile(int padIdx,
-                             const std::string& filePath,
-                             const std::string& name) {
+                              const std::string& filePath,
+                              const std::string& name) {
     Kit* kit = currentKitMutable();
     if (!kit) return false;
-
-    // Refus silencieux si factory — l'appelant doit d'abord dupliquer
     if (kit->isFactory) {
         std::cerr << "[KitManager] setPadFile: kit factory non modifiable\n";
         return false;
@@ -214,11 +209,23 @@ bool KitManager::setPadFile(int padIdx,
     return true;
 }
 
+bool KitManager::setPadMode(int padIdx, PlayMode mode) {
+    Kit* kit = currentKitMutable();
+    if (!kit) return false;
+    if (kit->isFactory) {
+        std::cerr << "[KitManager] setPadMode: kit factory non modifiable\n";
+        return false;
+    }
+    if (padIdx < 0 || padIdx >= static_cast<int>(kit->pads.size()))
+        return false;
+    kit->pads[padIdx].mode = mode;
+    return true;
+}
+
 int KitManager::upsertUserKit(Kit kit) {
     kit.isFactory = false;
     if (kit.id.empty()) kit.id = nameToId(kit.name);
 
-    // Cherche parmi les kits utilisateur uniquement
     for (int i = 0; i < static_cast<int>(kits_.size()); ++i) {
         if (!kits_[i].isFactory && kits_[i].name == kit.name) {
             kits_[i] = std::move(kit);
@@ -230,29 +237,22 @@ int KitManager::upsertUserKit(Kit kit) {
 }
 
 void KitManager::clearUserKits() {
-    // Supprimer tous les kits !isFactory
     kits_.erase(
         std::remove_if(kits_.begin(), kits_.end(),
                        [](const Kit& k){ return !k.isFactory; }),
         kits_.end()
     );
-    // Recentrer sur le premier kit factory si nécessaire
-    currentIdx_ = 0;   // toujours rebascule sur le premier factory
+    currentIdx_ = 0;
 }
 
-// ── Persistance ───────────────────────────────────────────────────
 bool KitManager::saveUserKits() const {
     if (userPath_.empty()) {
         std::cerr << "[KitManager] saveUserKits: userPath_ non défini\n";
         return false;
     }
-
-    // Collecter les kits utilisateur
     std::vector<Kit> userKits;
     for (const auto& k : kits_)
         if (!k.isFactory) userKits.push_back(k);
-
-    // Base = même dossier que le factory pour chemins relatifs cohérents
     return writeKits(userPath_, userKits, factoryBase_);
 }
 

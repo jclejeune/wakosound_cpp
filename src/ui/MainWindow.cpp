@@ -15,13 +15,6 @@
 #include <QMessageBox>
 #include <iostream>
 
-// ──────────────────────────────────────────────────────────────────
-// Mapping clavier AZERTY → pads
-//
-//  A Z E      pad 0 1 2   (ligne haute)
-//  Q S D      pad 3 4 5   (ligne milieu)
-//  W X C      pad 6 7 8   (ligne basse)
-// ──────────────────────────────────────────────────────────────────
 static const Qt::Key PAD_KEYS[] = {
     Qt::Key_A, Qt::Key_Z, Qt::Key_E,
     Qt::Key_Q, Qt::Key_S, Qt::Key_D,
@@ -78,7 +71,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     padGrid_     = new PadGrid(splitter_);
     stepGrid_    = new StepGrid(pattern_, splitter_);
-    mixerPanel_  = new MixerPanel(pattern_, splitter_);
+
+    // ── MixerPanel reçoit kitManager_ pour les modes ──────────────
+    mixerPanel_  = new MixerPanel(pattern_, kitManager_, splitter_);
     renderPanel_ = new RenderPanel(pattern_, kitManager_, splitter_);
 
     stepGrid_->setKit(kitManager_->currentKit());
@@ -125,7 +120,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
         if (!kit) return;
         const auto* pad = kit->pad(idx);
         if (pad && pad->enabled && !pad->filePath.empty())
-            audio::Player::instance().play(pad->filePath, pad->volume, 0, false, idx);
+            audio::Player::instance().play(
+                pad->filePath, pad->volume, 0, false, idx, pad->mode);
     });
 
     connect(transportBar_, &TransportBar::playStopClicked, this, &MainWindow::onPlayStop);
@@ -167,24 +163,28 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(stepGrid_, &StepGrid::stepDataChanged,    this, [this](int,int,seq::StepData) { stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackGateToggled,   this, [this](int pad) { pattern_->toggleTrackGate(pad); stepGrid_->update(); });
     connect(stepGrid_, &StepGrid::trackLengthChanged, this, [](int,int){});
-
     connect(stepGrid_, &StepGrid::trackMuteToggled, this, [this](int pad) {
         pattern_->toggleMute(pad); stepGrid_->update();
     });
     connect(stepGrid_, &StepGrid::trackSoloToggled, this, [this](int pad) {
         pattern_->toggleSolo(pad); stepGrid_->update();
     });
+
     connect(mixerPanel_, &MixerPanel::trackMuteToggled, this, [this](int pad) {
         pattern_->toggleMute(pad); stepGrid_->update();
     });
     connect(mixerPanel_, &MixerPanel::trackSoloToggled, this, [this](int pad) {
         pattern_->toggleSolo(pad); stepGrid_->update();
     });
-
-    // ── Retrigger ─────────────────────────────────────────────────
     connect(mixerPanel_, &MixerPanel::trackRetriggerToggled, this, [this](int pad) {
         pattern_->toggleTrackRetrigger(pad);
     });
+
+    // ── Mode playback changé — refresh PadGrid label si besoin ────
+    connect(mixerPanel_, &MixerPanel::padModeChanged,
+            this, [this](int /*pad*/, model::PlayMode /*mode*/) {
+                padGrid_->refresh(kitManager_->currentKit());
+            });
 
     connect(sampleBrowser_, &SampleBrowser::samplePreviewRequested,
             this, [this](const QString& path) {
@@ -192,7 +192,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             });
 
     connect(padGrid_, &PadGrid::padFileDropped, this, &MainWindow::onPadFileDropped);
-
     connect(renderPanel_, &RenderPanel::sequencerStartRequested, this, &MainWindow::onRenderStart);
     connect(renderPanel_, &RenderPanel::sequencerStopRequested,  this, &MainWindow::onRenderStop);
 }
@@ -201,7 +200,6 @@ MainWindow::~MainWindow() {
     if (engine_) engine_->stop();
 }
 
-// ──────────────────────────────────────────────────────────────────
 void MainWindow::refreshKitCombo() {
     QStringList names;
     for (const auto& k : kitManager_->kits())
@@ -236,9 +234,7 @@ void MainWindow::onRenderStart() {
     transportBar_->setPlaying(true);
 }
 
-void MainWindow::onRenderStop() {
-    stopSequencer();
-}
+void MainWindow::onRenderStop() { stopSequencer(); }
 
 void MainWindow::onClear() {
     if (engine_->isRunning()) {
@@ -294,9 +290,6 @@ void MainWindow::onSequencerStep(const seq::TrackSteps& steps) {
     }, Qt::QueuedConnection);
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Navigation pas-à-pas (J/K)
-// ──────────────────────────────────────────────────────────────────
 void MainWindow::playCurrentStep() {
     const auto* kit = kitManager_->currentKit();
     if (!kit) return;
@@ -310,7 +303,9 @@ void MainWindow::playCurrentStep() {
         const model::Pad* pad = kit->pad(p);
         if (!pad || !pad->enabled || pad->filePath.empty()) continue;
         float vol = pad->volume * sd.volume * pattern_->trackVolumes[p];
-        player.play(pad->filePath, vol, sd.pitch, sd.gate || pattern_->trackGate[p], p);
+        player.play(pad->filePath, vol, sd.pitch,
+                    sd.gate || pattern_->trackGate[p], p,
+                    pad->mode);  // ← mode transmis
         padGrid_->flashPad(p);
     }
 
@@ -327,37 +322,20 @@ void MainWindow::stepForward() {
 
 void MainWindow::stepBackward() {
     if (engine_->isRunning()) return;
-    for (int p = 0; p < seq::MAX_PADS; ++p) {
+    for (int p = 0; p < seq::MAX_PADS; ++p)
         pattern_->trackSteps[p] =
             (pattern_->trackSteps[p] - 1 + pattern_->trackLengths[p])
             % pattern_->trackLengths[p];
-    }
     playCurrentStep();
 }
 
-// ──────────────────────────────────────────────────────────────────
-// keyPressEvent
-// ──────────────────────────────────────────────────────────────────
 void MainWindow::keyPressEvent(QKeyEvent* event) {
-    if (event->isAutoRepeat()) {
-        QMainWindow::keyPressEvent(event);
-        return;
-    }
-
+    if (event->isAutoRepeat()) { QMainWindow::keyPressEvent(event); return; }
     const Qt::Key key = static_cast<Qt::Key>(event->key());
 
-    if (key == Qt::Key_Space || key == Qt::Key_L) {
-        onPlayStop();
-        return;
-    }
-    if (key == Qt::Key_K) {
-        stepForward();
-        return;
-    }
-    if (key == Qt::Key_J) {
-        stepBackward();
-        return;
-    }
+    if (key == Qt::Key_Space || key == Qt::Key_L) { onPlayStop();    return; }
+    if (key == Qt::Key_K)                         { stepForward();   return; }
+    if (key == Qt::Key_J)                         { stepBackward();  return; }
 
     for (int i = 0; i < 9; ++i) {
         if (key == PAD_KEYS[i]) {
@@ -366,7 +344,6 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
             return;
         }
     }
-
     QMainWindow::keyPressEvent(event);
 }
 

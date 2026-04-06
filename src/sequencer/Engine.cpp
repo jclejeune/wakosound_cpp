@@ -107,9 +107,6 @@ void Engine::playPads(const std::vector<int>&  activePads,
         bool  useGate   = pat.trackGate[padIdx] || sd.gate;
 
         // ── Retrigger conditionnel ────────────────────────────────
-        // Si activé : stoppe la voix précédente avant de rejouer
-        // (évite l'accumulation sur les loops et les patterns denses)
-        // Si désactivé : les sons se chevauchent librement (nappes, sustain)
         if (pat.trackRetrigger[padIdx]) {
             auto it = activeVoices_.find(padIdx);
             if (it != activeVoices_.end()) {
@@ -118,10 +115,13 @@ void Engine::playPads(const std::vector<int>&  activePads,
             }
         }
 
-        int voiceId = player.play(pad->filePath, stepVol, stepPitch,
-                                  useGate, padIdx);
+        // ── Play avec le mode du pad ──────────────────────────────
+        int voiceId = player.play(
+            pad->filePath, stepVol, stepPitch,
+            useGate, padIdx,
+            pad->mode   // ← PlayMode transmis ici
+        );
 
-        // Tracker toutes les voix (gate ou non) pour retrigger + gate
         if (voiceId >= 0)
             activeVoices_[padIdx] = voiceId;
     }

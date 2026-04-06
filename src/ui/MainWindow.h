@@ -38,8 +38,6 @@ private:
     void onSequencerStep(const seq::TrackSteps& steps);
     void stopSequencer();
     void refreshKitCombo();
-
-    // Navigation pas-à-pas (J/K)
     void stepForward();
     void stepBackward();
     void playCurrentStep();
